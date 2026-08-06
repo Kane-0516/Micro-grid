@@ -56,6 +56,9 @@ deploy/.env
 # Local IDE / agent
 .kiro/
 
+# Local internal notes (do not publish)
+项目实现逻辑.md
+
 # Local DB dumps / generated DBs at repo root
 /products.db
 /microgrid_products.dump
