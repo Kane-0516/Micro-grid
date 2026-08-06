@@ -1,0 +1,412 @@
+.product-config-page {
+  min-height: 100%;
+  padding: 1.5rem;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.product-config-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.product-config-page__title {
+  color: #183b70;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 0.35rem;
+}
+
+.product-config-page__subtitle {
+  color: #5d6f85;
+  max-width: 58rem;
+  line-height: 1.6;
+}
+
+.product-config-page__header-actions,
+.product-config-page__editor-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.product-config-page__hidden-file {
+  display: none;
+}
+
+.product-config-page__view-tab {
+  border: 1px solid #cfdbeb;
+  background: #fff;
+  color: #35527f;
+  border-radius: 999px;
+  padding: 0.78rem 1.2rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.product-config-page__view-tab.active,
+.product-config-page__view-tab:hover {
+  border-color: #2f69a8;
+  background: #edf5ff;
+  color: #183b70;
+}
+
+.product-config-page__layout {
+  display: grid;
+  grid-template-columns: 240px minmax(320px, 1fr) minmax(420px, 1.1fr);
+  gap: 1rem;
+  min-height: calc(100vh - 220px);
+}
+
+.product-config-page__categories,
+.product-config-page__list,
+.product-config-page__editor {
+  background: #fff;
+  border: 1px solid #d8e6f4;
+  border-radius: 22px;
+  box-shadow: 0 10px 24px rgba(24, 59, 112, 0.08);
+}
+
+.product-config-page__categories {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.product-config-page__category-btn {
+  border: 1px solid #d8e6f4;
+  background: #f9fbff;
+  color: #35527f;
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.product-config-page__category-btn:hover,
+.product-config-page__category-btn.active {
+  border-color: #2f69a8;
+  background: #edf5ff;
+  color: #183b70;
+}
+
+.product-config-page__list,
+.product-config-page__editor {
+  padding: 1.1rem 1.15rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.product-config-page__panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.9rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e7eef6;
+}
+
+.product-config-page__panel-header h2 {
+  color: #183b70;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.product-config-page__panel-header span {
+  color: #6d7f95;
+  font-size: 0.92rem;
+}
+
+.product-config-page__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.8rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.product-config-page__toolbar,
+.product-config-page__settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.product-config-page__toolbar--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.product-config-page__filter-row,
+.product-config-page__action-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.product-config-page__action-row {
+  justify-content: flex-end;
+}
+
+.product-config-page__search,
+.product-config-page__select {
+  border: 1px solid #d8e3f0;
+  border-radius: 14px;
+  padding: 0.78rem 0.95rem;
+  font: inherit;
+  color: #183b70;
+  background: #fff;
+}
+
+.product-config-page__search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.product-config-page__select {
+  min-width: 180px;
+}
+
+.product-config-page__settings-header h2 {
+  color: #183b70;
+  font-size: 1.45rem;
+  font-weight: 800;
+  margin-bottom: 0.3rem;
+}
+
+.product-config-page__settings-header p {
+  color: #5d6f85;
+  max-width: 56rem;
+  line-height: 1.6;
+}
+
+.product-config-page__item-card {
+  border: 1px solid #dce7f3;
+  background: #fcfdff;
+  border-radius: 16px;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.product-config-page__item-card:hover,
+.product-config-page__item-card.active {
+  border-color: #2f69a8;
+  background: #eff6ff;
+  box-shadow: 0 8px 18px rgba(47, 105, 168, 0.1);
+}
+
+.product-config-page__item-title {
+  color: #183b70;
+  font-weight: 800;
+  line-height: 1.35;
+  margin-bottom: 0.35rem;
+}
+
+.product-config-page__item-key {
+  color: #67809d;
+  font-size: 0.88rem;
+}
+
+.product-config-page__empty {
+  color: #6f8094;
+  padding: 1.2rem;
+  border: 1px dashed #d8e6f4;
+  border-radius: 16px;
+  background: #fafcff;
+}
+
+.product-config-page__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.product-config-page__field span {
+  color: #36527d;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.product-config-page__required {
+  color: #d14343;
+  font-style: normal;
+  margin-left: 0.2rem;
+}
+
+.product-config-page__field-help {
+  color: #70839a;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin-top: -0.15rem;
+}
+
+.product-config-page__field-error {
+  color: #b42318;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.product-config-page__field input,
+.product-config-page__field textarea {
+  width: 100%;
+  border: 1px solid #d8e3f0;
+  border-radius: 14px;
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+  color: #183b70;
+  background: #fff;
+}
+
+.product-config-page__field input.product-config-page__input-error,
+.product-config-page__field textarea.product-config-page__input-error {
+  border-color: #e07a7a;
+  background: #fff7f7;
+  box-shadow: 0 0 0 3px rgba(224, 122, 122, 0.12);
+}
+
+.product-config-page__field input:disabled {
+  background: #f3f7fb;
+  color: #6f8094;
+}
+
+.product-config-page__form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem 1rem;
+}
+
+.product-config-page__form-grid--single {
+  grid-template-columns: 1fr;
+}
+
+.product-config-page__field.full {
+  grid-column: 1 / -1;
+}
+
+.product-config-page__structured-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  padding: 0.25rem 0 0.1rem;
+}
+
+.product-config-page__alert {
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  margin-top: 1rem;
+  font-weight: 600;
+}
+
+.product-config-page__alert.error {
+  background: #fff1f1;
+  border: 1px solid #f3c1c1;
+  color: #9b2c2c;
+}
+
+.product-config-page__alert.success {
+  background: #effaf4;
+  border: 1px solid #b9e7c8;
+  color: #24754a;
+}
+
+.product-config-page__editor-actions {
+  margin-top: auto;
+  padding-top: 1rem;
+  justify-content: flex-end;
+}
+
+.product-config-page__primary-btn,
+.product-config-page__ghost-btn,
+.product-config-page__danger-btn {
+  border-radius: 999px;
+  font-weight: 800;
+  padding: 0.82rem 1.25rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.product-config-page__primary-btn {
+  border: none;
+  color: #fff;
+  background: linear-gradient(135deg, #183b70 0%, #2f69a8 100%);
+}
+
+.product-config-page__ghost-btn {
+  border: 1px solid #cfdbeb;
+  color: #35527f;
+  background: #fff;
+}
+
+.product-config-page__danger-btn {
+  border: 1px solid #efc1c1;
+  color: #972d2d;
+  background: #fff6f6;
+}
+
+.product-config-page__settings-view {
+  background: #fff;
+  border: 1px solid #d8e6f4;
+  border-radius: 22px;
+  box-shadow: 0 10px 24px rgba(24, 59, 112, 0.08);
+  padding: 1.2rem 1.25rem 1.3rem;
+}
+
+.product-config-page__settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.product-config-page__settings-card {
+  background: #fdfefe;
+  border: 1px solid #d8e6f4;
+  border-radius: 20px;
+  padding: 1rem 1.05rem 1.1rem;
+  box-shadow: 0 8px 18px rgba(24, 59, 112, 0.05);
+}
+
+@media (max-width: 1480px) {
+  .product-config-page__layout {
+    grid-template-columns: 220px minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  }
+}
+
+@media (max-width: 1260px) {
+  .product-config-page__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .product-config-page__settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .product-config-page__settings-header,
+  .product-config-page__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .product-config-page__filter-row,
+  .product-config-page__action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .product-config-page__structured-grid {
+    grid-template-columns: 1fr;
+  }
+}

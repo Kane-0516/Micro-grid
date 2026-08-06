@@ -1,0 +1,37 @@
+.info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  background: #2d3748;
+  padding: 1.25rem 1.5rem;
+  border-radius: 8px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.info-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #4a5568;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.info-content {
+  flex: 1;
+}
+
+.info-content p {
+  color: white;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}

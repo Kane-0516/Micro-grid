@@ -1,0 +1,70 @@
+.standard-product-page {
+  position: relative;
+  /* min-height: calc(100vh - 80px); */
+  min-height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+/* 拓扑图区域允许选中设备图片（覆盖父级 user-select:none） */
+.standard-product-page__topology-wrap .standard-product-topology .microgrid-topology {
+  user-select: auto;
+}
+
+.standard-product-page__grid-bg {
+  position: absolute;
+  inset: 0;
+  background-color: #f4f7fc;
+  background-image:
+    linear-gradient(rgba(76, 103, 153, 0.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 103, 153, 0.13) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.standard-product-page__topology-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  min-height: 0;
+}
+
+.standard-product-page__content {
+  position: relative;
+  z-index: 2;
+  min-height: inherit;
+  padding: 2rem 2.5rem;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.standard-product-page__header {
+  text-align: center;
+  margin-top: 0.5rem;
+}
+
+.standard-product-page__title {
+  margin: 0;
+  font-size: clamp(1.1rem, 1.2vw + 0.8rem, 1.6rem);
+  font-weight: 700;
+  color: #223559;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(131, 152, 187, 0.5);
+  border-radius: 10px;
+  padding: 0.55rem 0.9rem;
+  backdrop-filter: blur(2px);
+}
+
+@media (max-width: 768px) {
+  .standard-product-page {
+    min-height: calc(100vh - 120px);
+  }
+
+  .standard-product-page__content {
+    padding: 1rem 0.75rem 1.5rem;
+    justify-content: flex-start;
+  }
+
+  .standard-product-page__header {
+    text-align: center;
+  }
+}

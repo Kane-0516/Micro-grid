@@ -1,0 +1,27 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 建筑主体 -->
+  <rect x="40" y="60" width="120" height="100" fill="#95a5a6" rx="3"/>
+  
+  <!-- 建筑顶部 -->
+  <polygon points="40,60 100,30 160,60" fill="#7f8c8d"/>
+  
+  <!-- 窗户 -->
+  <rect x="55" y="80" width="25" height="30" fill="#3498db" rx="2"/>
+  <rect x="90" y="80" width="25" height="30" fill="#3498db" rx="2"/>
+  <rect x="125" y="80" width="25" height="30" fill="#3498db" rx="2"/>
+  
+  <rect x="55" y="120" width="25" height="30" fill="#3498db" rx="2"/>
+  <rect x="90" y="120" width="25" height="30" fill="#3498db" rx="2"/>
+  <rect x="125" y="120" width="25" height="30" fill="#3498db" rx="2"/>
+  
+  <!-- 门 -->
+  <rect x="85" y="140" width="30" height="20" fill="#34495e" rx="2"/>
+  <circle cx="95" cy="150" r="2" fill="#ecf0f1"/>
+  
+  <!-- 电力连接 -->
+  <line x1="100" y1="60" x2="100" y2="40" stroke="#34495e" stroke-width="3"/>
+  <circle cx="100" cy="40" r="5" fill="#34495e"/>
+  
+  <!-- 底座 -->
+  <rect x="30" y="160" width="140" height="10" fill="#34495e" rx="2"/>
+</svg>

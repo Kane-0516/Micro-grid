@@ -1,0 +1,40 @@
+.option-button {
+  width: 100%;
+  padding: 2rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid #e0e0e0;
+  background: white;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-radius: 6px;
+}
+
+.option-button:hover:not(.disabled) {
+  border-color: #1a365d;
+  background-color: #f7fafc;
+}
+
+.option-button.selected {
+  border-color: #1a365d;
+  background-color: #edf2f7;
+  border-left: 3px solid #1a365d;
+}
+
+.option-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.option-label {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1a365d;
+  margin-bottom: 0.75rem;
+}
+
+.option-description {
+  font-size: 1.125rem;
+  color: #666;
+  line-height: 1.7;
+}

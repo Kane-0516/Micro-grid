@@ -1,0 +1,5 @@
+{
+  "command": [
+    "bash -lc 'tail -n 50 /tmp/deploy-20260629.log 2>/dev/null || echo LOG_NOT_READY'"
+  ]
+}

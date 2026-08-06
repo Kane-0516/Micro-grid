@@ -1,0 +1,5 @@
+{
+  "command": [
+    "bash -lc 'aws s3 ls s3://voltage-mgs/pre-sale/ --region us-east-1; aws s3 ls s3://monarchemsconfig/ --region us-east-1 | head -5'"
+  ]
+}

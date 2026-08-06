@@ -1,0 +1,165 @@
+.bracket-sets-selector {
+  margin-bottom: 1rem;
+}
+
+.bracket-details {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.toggle-details-btn {
+  padding: 0.5rem 1rem;
+  background-color: #1a365d;
+  color: white;
+  border: 1px solid #1a365d;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.toggle-details-btn:hover {
+  background-color: #2c5282;
+  border-color: #2c5282;
+}
+
+.details-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.info-display {
+  padding: 1rem;
+  background-color: white;
+  border-radius: 4px;
+}
+
+.info-display p {
+  margin: 0.5rem 0;
+  color: #666;
+}
+
+/* ── 型号选择卡片 ─────────────────────────────── */
+.form-section {
+  margin-top: 1rem;
+}
+
+.form-section-title {
+  font-size: 0.95rem;
+  color: #2d3748;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.model-selector-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.model-card {
+  flex: 0 0 auto;
+  min-width: 130px;
+  padding: 0.75rem 1rem;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  background: white;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.model-card:hover {
+  border-color: #4a9eff;
+  background: #f0f7ff;
+}
+
+.model-card.selected {
+  border-color: #1a365d;
+  background: #ebf4ff;
+  box-shadow: 0 0 0 2px rgba(26, 54, 93, 0.15);
+}
+
+.model-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a365d;
+  margin-bottom: 0.2rem;
+}
+
+.model-detail {
+  font-size: 0.72rem;
+  color: #718096;
+  margin-bottom: 0.3rem;
+}
+
+.model-price {
+  font-size: 0.82rem;
+  color: var(--theme-brand-700);
+  font-weight: 600;
+}
+
+.model-efficiency, .model-area {
+  font-size: 0.75rem;
+  color: #718096;
+  margin-top: 0.1rem;
+}
+
+.model-kw-per-set {
+  font-size: 0.75rem;
+  color: #4a5568;
+  margin-top: 0.2rem;
+  font-weight: 500;
+}
+
+/* ── 汇总条 ─────────────────────────────────── */
+.bracket-summary {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  border-bottom: 1px solid #f7f8fa;
+  color: #4a5568;
+}
+
+.summary-row:last-child {
+  border-bottom: none;
+}
+
+.summary-row strong {
+  color: #1a365d;
+}

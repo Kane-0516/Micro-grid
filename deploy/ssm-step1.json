@@ -1,0 +1,5 @@
+{
+  "command": [
+    "bash -lc 'aws s3 cp s3://voltage-mgs/pre-sale/deploy/remote-bootstrap.sh /home/ec2-user/remote-bootstrap.sh --region us-east-1 && chmod +x /home/ec2-user/remote-bootstrap.sh && ls -la /home/ec2-user/remote-bootstrap.sh'"
+  ]
+}

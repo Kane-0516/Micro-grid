@@ -1,0 +1,17 @@
+.standard-product-topology {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.standard-product-topology__inner {
+  position: absolute;
+  inset: 0;
+}
+
+.standard-product-topology .config-summary-panel {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+}

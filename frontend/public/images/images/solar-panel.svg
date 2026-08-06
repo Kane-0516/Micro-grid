@@ -1,0 +1,31 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 光伏板背景 -->
+  <rect x="20" y="40" width="160" height="120" fill="#2c3e50" rx="2"/>
+  
+  <!-- 光伏板网格线 -->
+  <line x1="60" y1="40" x2="60" y2="160" stroke="#34495e" stroke-width="1"/>
+  <line x1="100" y1="40" x2="100" y2="160" stroke="#34495e" stroke-width="1"/>
+  <line x1="140" y1="40" x2="140" y2="160" stroke="#34495e" stroke-width="1"/>
+  <line x1="20" y1="80" x2="180" y2="80" stroke="#34495e" stroke-width="1"/>
+  <line x1="20" y1="120" x2="180" y2="120" stroke="#34495e" stroke-width="1"/>
+  
+  <!-- 太阳能电池片 -->
+  <rect x="25" y="45" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="65" y="45" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="105" y="45" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="145" y="45" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  
+  <rect x="25" y="85" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="65" y="85" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="105" y="85" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="145" y="85" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  
+  <rect x="25" y="125" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="65" y="125" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="105" y="125" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  <rect x="145" y="125" width="30" height="30" fill="#f39c12" opacity="0.8"/>
+  
+  <!-- 连接线 -->
+  <line x1="100" y1="160" x2="100" y2="180" stroke="#34495e" stroke-width="2"/>
+  <circle cx="100" cy="180" r="5" fill="#34495e"/>
+</svg>

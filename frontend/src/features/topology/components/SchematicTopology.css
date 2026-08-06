@@ -1,0 +1,28 @@
+.schematic-topology {
+  position: relative;
+  height: 760px;
+  background: #f4f7fc;
+  background-image:
+    linear-gradient(rgba(76, 103, 153, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(76, 103, 153, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.schematic-topology__inner {
+  position: absolute;
+  inset: 0;
+}
+
+@media (max-width: 1200px) {
+  .schematic-topology {
+    height: 680px;
+  }
+}
+
+@media (max-width: 768px) {
+  .schematic-topology {
+    height: 620px;
+  }
+}

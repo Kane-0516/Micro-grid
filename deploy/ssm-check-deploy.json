@@ -1,0 +1,5 @@
+{
+  "command": [
+    "bash -lc 'ls -la /opt/docker/pre-sale/deploy/deploy-20260629.log /tmp/remote-bootstrap.sh 2>&1; ps aux | grep remote-bootstrap | grep -v grep; ps aux | grep remote-deploy | grep -v grep'"
+  ]
+}

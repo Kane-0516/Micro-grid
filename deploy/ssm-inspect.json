@@ -1,0 +1,11 @@
+{
+  "commands": [
+    "ls -la /opt/docker/pre-sale",
+    "ls -la /opt/docker/pre-sale/deploy",
+    "docker ps",
+    "cat /opt/docker/pre-sale/deploy/.env",
+    "docker images | head -20",
+    "ls -la /opt/docker/pre-sale/deploy/artifacts 2>/dev/null || true",
+    "find /opt/docker/pre-sale -maxdepth 2 -name '*.sh' -o -name 'deploy*.log' 2>/dev/null | head -20"
+  ]
+}

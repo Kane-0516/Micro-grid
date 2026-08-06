@@ -1,0 +1,10 @@
+.config-topology {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+}
+
+.config-topology__inner {
+  position: absolute;
+  inset: 0;
+}

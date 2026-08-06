@@ -1,0 +1,66 @@
+﻿# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build outputs
+dist/
+build/
+frontend/dist/
+
+# Python cache / virtual env
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Logs
+*.log
+backend/app/logs/
+
+# Private report templates / internal assets (do not publish)
+backend/.private/
+backend/tmp_report_test.xlsx
+
+# Local geocoder data
+.tools/
+.tools/pelias-docker/
+.tools/pelias-data/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# SQLite product database (generated from products.yaml at runtime)
+backend/products.db
+
+# Large local tool artifacts
+META-INF/
+# Local Codex/upload staging artifacts
+0
+None
+_codex_upload/
+__codex_upload_tmp__/
+_deploy_staging/
+_deploy_staging2/
+
+# Deployment bundles / temporary export files
+deploy/*.tgz
+deploy/artifacts/
+deploy/presigned-urls.txt
+deploy/.env
+
+# Local IDE / agent
+.kiro/
+
+# Local DB dumps / generated DBs at repo root
+/products.db
+/microgrid_products.dump
+/0
+/None
+
+
+backend/products.yaml.bak

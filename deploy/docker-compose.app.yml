@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: microgrid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-microgrid_products}
+      POSTGRES_USER: ${POSTGRES_USER:-microgrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-microgrid}
+    volumes:
+      - microgrid-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-microgrid} -d ${POSTGRES_DB:-microgrid_products}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - microgrid-net
+
+  backend:
+    image: ${BACKEND_IMAGE:-microgrid-backend:20260403}
+    container_name: microgrid-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-6001}:6001"
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 6001
+      DEBUG: "false"
+      DATABASE_URL: ${DATABASE_URL:-postgresql://microgrid:microgrid@postgres:5432/microgrid_products}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}
+      GEOCODER_DEFAULT_REGION: ${GEOCODER_DEFAULT_REGION:-us}
+      GEOCODER_API_URL: ${GEOCODER_API_URL:-http://host.docker.internal:4000/v1/search}
+      GEOCODER_REVERSE_API_URL: ${GEOCODER_REVERSE_API_URL:-http://host.docker.internal:4000/v1/reverse}
+      GEOCODER_API_URL_CN: ${GEOCODER_API_URL_CN:-http://host.docker.internal:4000/v1/search}
+      GEOCODER_REVERSE_API_URL_CN: ${GEOCODER_REVERSE_API_URL_CN:-http://host.docker.internal:4000/v1/reverse}
+      GEOCODER_API_URL_US: ${GEOCODER_API_URL_US:-http://host.docker.internal:4000/v1/search}
+      GEOCODER_REVERSE_API_URL_US: ${GEOCODER_REVERSE_API_URL_US:-http://host.docker.internal:4000/v1/reverse}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      INTERNAL_REPORT_EMAIL_DOMAINS: ${INTERNAL_REPORT_EMAIL_DOMAINS:-example.com}
+      INTERNAL_REPORT_EMAILS: ${INTERNAL_REPORT_EMAILS:-}
+    volumes:
+      - ${REPORT_TEMPLATE_DIR:-/opt/docker/pre-sale/report_templates}:/backend/.private/report_templates:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6001/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - microgrid-net
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-microgrid-frontend:20260403}
+    container_name: microgrid-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8081}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - microgrid-net
+
+networks:
+  microgrid-net:
+    driver: bridge
+
+volumes:
+  microgrid-postgres-data:

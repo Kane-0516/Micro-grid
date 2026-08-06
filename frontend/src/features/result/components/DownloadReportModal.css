@@ -1,0 +1,308 @@
+/* DownloadReportModal.css */
+
+/* ── Overlay ─────────────────────────────────────────────── */
+.drm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 25, 50, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+  animation: drm-fade-in 0.18s ease;
+}
+
+@keyframes drm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Box ─────────────────────────────────────────────────── */
+.drm-box {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 540px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  animation: drm-slide-up 0.22s ease;
+}
+
+@keyframes drm-slide-up {
+  from { transform: translateY(24px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Header ──────────────────────────────────────────────── */
+.drm-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.4rem 1.5rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.drm-header-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.drm-icon {
+  width: 42px;
+  height: 42px;
+  background: var(--theme-tone-bg);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.drm-icon svg {
+  width: 22px;
+  height: 22px;
+  color: var(--theme-brand-700);
+}
+
+.drm-header-title h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a365d;
+  margin: 0 0 0.2rem;
+}
+
+.drm-header-title p {
+  font-size: 0.82rem;
+  color: #718096;
+  margin: 0;
+}
+
+.drm-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: #a0aec0;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: 6px;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+  margin-top: -2px;
+}
+.drm-close:hover { background: #f7fafc; color: #4a5568; }
+
+/* ── Form ────────────────────────────────────────────────── */
+.drm-form {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.drm-desc {
+  font-size: 0.88rem;
+  color: #4a5568;
+  margin: 0 0 1.1rem;
+  line-height: 1.5;
+}
+
+
+.drm-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.drm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.32rem;
+  margin-bottom: 0.85rem;
+}
+
+.drm-field label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.drm-req {
+  color: var(--theme-tone-danger-text);
+  font-weight: 700;
+}
+
+.drm-field input,
+.drm-field select {
+  padding: 0.5rem 0.7rem;
+  border: 1.5px solid #cbd5e0;
+  border-radius: 7px;
+  font-size: 0.9rem;
+  color: #2d3748;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.drm-field input:focus,
+.drm-field select:focus {
+  border-color: var(--theme-brand-700);
+  box-shadow: 0 0 0 3px rgba(44, 82, 130, 0.12);
+}
+
+/* ── Preview section ─────────────────────────────────────── */
+.drm-preview {
+  background: var(--theme-tone-bg);
+  border: 1px solid var(--theme-tone-border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.drm-preview-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--theme-tone-text);
+  margin-bottom: 0.4rem;
+}
+
+.drm-preview ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  color: var(--theme-tone-text);
+  line-height: 1.7;
+}
+
+.drm-assumptions {
+  background: linear-gradient(180deg, #f8fbff 0%, #f3f7fb 100%);
+  border: 1px solid #d7e3f0;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.drm-assumptions-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1a365d;
+  margin-bottom: 0.65rem;
+}
+
+.drm-assumptions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 0.8rem;
+}
+
+.drm-assumption-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.drm-assumption-label {
+  font-size: 0.74rem;
+  color: #718096;
+}
+
+.drm-assumption-item strong {
+  font-size: 0.84rem;
+  color: #2d3748;
+  line-height: 1.45;
+}
+
+/* ── Actions ─────────────────────────────────────────────── */
+.drm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+/* ── Spinner ─────────────────────────────────────────────── */
+.drm-spin-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.drm-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: drm-spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+@keyframes drm-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Done / Error state ──────────────────────────────────── */
+.drm-done {
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.drm-done-check {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--theme-brand-100);
+  color: var(--theme-tone-text);
+  font-size: 1.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+
+.drm-done-check.err {
+  background: var(--theme-tone-danger-bg);
+  color: var(--theme-tone-danger-text);
+}
+
+.drm-done h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #1a365d;
+  margin: 0 0 0.6rem;
+}
+
+.drm-done p {
+  font-size: 0.9rem;
+  color: #4a5568;
+  max-width: 380px;
+  margin: 0 auto 0.6rem;
+  line-height: 1.5;
+}
+
+.drm-email-note {
+  font-size: 0.83rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 6px;
+  display: inline-block;
+}
+
+.drm-email-note.ok   { background: var(--theme-tone-bg); color: var(--theme-tone-text); border: 1px solid var(--theme-tone-border); }
+.drm-email-note.warn { background: var(--theme-tone-warm-bg); color: var(--theme-tone-warm-text); border: 1px solid var(--theme-tone-warm-border); }
+
+@media (max-width: 640px) {
+  .drm-row {
+    grid-template-columns: 1fr;
+  }
+
+  .drm-assumptions-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,114 @@
+.home-bg-display {
+  width: min(100%, 1080px);
+  margin: 0 auto;
+}
+
+.home-bg-display--full {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.home-bg-display__svg-wrap {
+  width: 100%;
+}
+
+.home-bg-display--full .home-bg-display__svg-wrap {
+  width: 100%;
+  height: 100%;
+}
+
+.home-bg-display__svg-wrap .svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.home-bg-display--full .home-bg-display__svg-wrap .svg {
+  width: 100%;
+  height: 100%;
+}
+
+.home-bg-display__svg-wrap .bg {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+.home-bg-display__svg-wrap .no-rem__card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 0 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+}
+
+.home-bg-display__svg-wrap .no-rem__card-title {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 14px;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-bg-display__svg-wrap .no-rem__card-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+}
+
+.home-bg-display__svg-wrap .no-rem__card-content-item {
+  min-height: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.home-bg-display__svg-wrap .no-rem__name {
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 1.1;
+  color: #ffffff;
+  margin-right: 0;
+  flex: 0 0 auto;
+  max-width: 54px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-bg-display__svg-wrap .no-rem__value {
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.1;
+  color: #ffffff;
+  margin-right: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-bg-display__svg-wrap .no-rem__unit {
+  font-weight: 400;
+  font-size: 10px;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, 0.7);
+  flex: 0 0 auto;
+}
+
+.home-bg-display__svg-wrap .horizontal-loop {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  clip-path: polygon(0% 0%, calc(100% - 7px) 0%, 100% 50%, calc(100% - 7px) 100%, 0% 100%, 7px 50%);
+}

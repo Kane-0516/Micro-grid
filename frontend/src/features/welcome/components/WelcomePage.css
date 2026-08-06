@@ -1,0 +1,308 @@
+.welcome-page {
+  min-height: 100vh;
+  background: #0a1929;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Background Pattern */
+.welcome-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 20% 30%, rgba(26, 54, 93, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(26, 54, 93, 0.2) 0%, transparent 50%),
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 2px,
+      rgba(26, 54, 93, 0.05) 2px,
+      rgba(26, 54, 93, 0.05) 4px
+    );
+  pointer-events: none;
+}
+
+/* Header Banner */
+.welcome-header {
+  background: #1a365d;
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  height: 100px;
+  min-height: auto;
+}
+
+.header-content {
+  width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.header-logo-section {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.brand-logo-text {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  line-height: 1;
+}
+
+/* 右侧：品牌文字 + 语言切换按钮组 */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-shrink: 0;
+}
+
+.header-brand-section {
+  display: flex;
+  flex-direction: column;
+  /* gap: 0.2rem; */
+  justify-content: space-around;
+  align-items: flex-end;   /* 右对齐 */
+}
+
+.header-slogan {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.header-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.brand-text {
+  color: white;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+
+.brand-subtitle {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.82rem;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+/* 语言切换按钮 */
+.lang-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 8px;
+  padding: 0.45rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lang-toggle:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.9);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.lang-toggle-label {
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.lang-toggle-divider {
+  font-size: 1rem;
+  opacity: 0.7;
+  margin: 0 0.1rem;
+}
+
+.lang-toggle-target {
+  opacity: 0.55;
+}
+
+/* Main Content */
+.welcome-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 100px);
+  padding: 6rem 3rem;
+}
+
+.content-wrapper {
+  max-width: 1100px;
+  text-align: center;
+  width: 100%;
+}
+
+.welcome-title {
+  margin-bottom: 2rem;
+  line-height: 1.2;
+}
+
+.title-prefix {
+  display: block;
+  color: white;
+  font-size: 4.5rem;
+  font-weight: 300;
+  margin-bottom: 1rem;
+  letter-spacing: -1px;
+}
+
+.title-main {
+  display: block;
+  color: #1a365d;
+  font-size: 5.5rem;
+  font-weight: 700;
+  letter-spacing: -2px;
+  line-height: 1.1;
+}
+
+.title-main::after {
+  content: '™';
+  font-size: 2rem;
+  vertical-align: super;
+  margin-left: 0.25rem;
+  color: #1a365d;
+}
+
+.welcome-description {
+  margin-bottom: 4rem;
+  text-align: left;
+}
+
+.description-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.5rem;
+  line-height: 1.8;
+  margin-bottom: 2rem;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.description-text:last-child {
+  margin-bottom: 0;
+}
+
+/* Call to Action Button */
+.welcome-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem 3rem;
+  background: #1a365d;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-cta::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.welcome-cta:hover::before {
+  left: 100%;
+}
+
+.welcome-cta:hover {
+  background: #2c5282;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(26, 54, 93, 0.4);
+}
+
+.cta-arrow {
+  font-size: 1.5rem;
+  transition: transform 0.3s ease;
+}
+
+.welcome-cta:hover .cta-arrow {
+  transform: translateX(4px);
+}
+
+@media (max-width: 768px) {
+  .welcome-header {
+    padding: 1rem;
+  }
+
+  .header-content {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .header-right {
+    gap: 0.75rem;
+  }
+
+  .brand-text {
+    font-size: 1.2rem;
+  }
+
+  .title-prefix {
+    font-size: 2rem;
+  }
+
+  .title-main {
+    font-size: 2.5rem;
+  }
+
+  .description-text {
+    font-size: 1rem;
+    text-align: center;
+  }
+
+  .welcome-cta {
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+  }
+
+  .welcome-content {
+    padding: 2rem 1rem;
+  }
+}

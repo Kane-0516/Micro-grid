@@ -1,0 +1,264 @@
+/* 拓扑图占满页面 */
+/* 设备图片尺寸：修改下方 .topology-device--wizard / .topology-device--standard 的 .topology-device__img-wrap */
+.microgrid-topology {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  user-select: auto; /* 覆盖父级 user-select:none，允许选中设备图片 */
+}
+
+/* 虚线连接线（连接设备图片，无动画） */
+.topology-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.topology-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 4 3;
+}
+
+/* 线条颜色由 SVG stroke="url(#line-*)" 定义 */
+
+/* 设备块：仅图片为连接主体，描述卡片绝对定位 */
+.topology-device {
+  position: absolute;
+  z-index: 2;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.12));
+}
+
+/* 设备图片容器（连接线连接主体，背景透明以支持透明 PNG） */
+/* 尺寸：PV > Load > ESS > Diesel */
+.topology-device__img-wrap {
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: transparent;
+  height: 100%;
+  width: 100%;
+}
+
+/* wizard 尺寸：PV > Load > ESS > Diesel（已知负载、产品示意图共用） */
+.topology-device--wizard.topology-device--pv .topology-device__img-wrap { width: 360px }
+.topology-device--wizard.topology-device--load .topology-device__img-wrap { width: 260px }
+.topology-device--wizard.topology-device--ess .topology-device__img-wrap { width: 240px }
+.topology-device--wizard.topology-device--diesel .topology-device__img-wrap { width: 220px }
+
+/* standard 尺寸（标准化产品页，与 wizard 比例一致略大） */
+.topology-device--standard.topology-device--pv .topology-device__img-wrap { width: 460px; }
+.topology-device--standard.topology-device--load .topology-device__img-wrap { width: 470px; }
+.topology-device--standard.topology-device--ess .topology-device__img-wrap { width: 340px; }
+.topology-device--standard.topology-device--diesel .topology-device__img-wrap { width: 320px; }
+
+.topology-device__img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.topology-device__label {
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.05em;
+}
+
+/* 描述卡片：绝对定位，宽度随文字内容自适应 */
+.topology-device__info {
+  position: absolute;
+  width: max-content;
+  min-width: 130px;
+  max-width: 280px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  border-left: 4px solid #10b981;
+  padding: 0.7rem 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  z-index: 3;
+}
+
+/* PV/Load：卡片在图片右侧，垂直居中 */
+.topology-device--pv .topology-device__info,
+.topology-device--load .topology-device__info {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 1rem;
+}
+
+/* 定制化产品：PV 描述向左、向下移动 */
+.microgrid-topology--layout-config .topology-device--pv .topology-device__info {
+  margin-left:-5rem;
+  top: 100%;
+  transform: translateY(-50%);
+}
+
+/* ESS：所有图形区域卡片在图片左侧 */
+.topology-device--ess .topology-device__info {
+  right: 100%;
+  left: auto;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: 1rem;
+  margin-left: 0;
+}
+
+/* Diesel：配置过程在右侧，示意图/标准化产品在左侧 */
+.topology-device--diesel .topology-device__info {
+  top: 50%;
+  transform: translateY(-50%);
+  min-width: 120px;
+}
+/* 定制化产品：Diesel 描述放在图片上方 */
+.microgrid-topology--layout-config .topology-device--diesel .topology-device__info {
+  bottom: 100%;
+  top: auto;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  margin-bottom: 0.8rem;
+  margin-left: 0;
+  margin-right: 0;
+}
+.microgrid-topology--layout-schematic .topology-device--diesel .topology-device__info,
+.microgrid-topology--layout-standard .topology-device--diesel .topology-device__info {
+  right: 100%;
+  left: auto;
+  margin-right: 1rem;
+  margin-left: 0;
+}
+
+.topology-device__info-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #1a365d;
+  margin-bottom: 0.45rem;
+}
+
+.topology-device__info-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.topology-device__info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.topology-device__info-label {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.topology-device__info-value {
+  color: #1e293b;
+  font-weight: 600;
+  text-align: right;
+}
+
+.topology-device__info-unit {
+  font-weight: 400;
+  color: #94a3b8;
+  margin-left: 0.15rem;
+}
+
+.topology-device__info-note {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  margin-top: 0.4rem;
+  padding-top: 0.35rem;
+  border-top: 1px dashed #e2e8f0;
+  line-height: 1.4;
+}
+
+/* ── 布局：ESS 居中，其余围绕 ───────────────────────────────── */
+/* PV: 左上 */
+.topology-device--pv {
+  top: 6%;
+  left: 4%;
+}
+
+/* Load: 左下 */
+.topology-device--load {
+  bottom: 10%;
+  left: 4%;
+}
+
+/* ESS: 正中心 */
+.topology-device--ess {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Diesel: 右下，向左偏移 */
+.topology-device--diesel {
+  bottom: 10%;
+  right: 14%;
+}
+
+.microgrid-topology--layout-schematic .topology-device--pv {
+  top: 4%;
+  left: 3%;
+}
+
+.microgrid-topology--layout-schematic .topology-device--load {
+  bottom: 5%;
+  left: 3%;
+}
+
+.microgrid-topology--layout-schematic .topology-device--ess {
+  top: 50%;
+  left: 52%;
+}
+
+.microgrid-topology--layout-schematic .topology-device--diesel {
+  bottom: 6%;
+  right: 8%;
+}
+
+.microgrid-topology--layout-schematic .topology-device--pv .topology-device__info,
+.microgrid-topology--layout-schematic .topology-device--load .topology-device__info {
+  margin-left: 1.4rem;
+}
+
+.microgrid-topology--layout-schematic .topology-device--ess .topology-device__info,
+.microgrid-topology--layout-schematic .topology-device--diesel .topology-device__info {
+  margin-right: 1.4rem;
+}
+
+@media (max-width: 900px) {
+  .topology-device--wizard.topology-device--pv .topology-device__img-wrap { width: 140px; height: 115px; }
+  .topology-device--wizard.topology-device--load .topology-device__img-wrap { width: 125px; height: 105px; }
+  .topology-device--wizard.topology-device--ess .topology-device__img-wrap { width: 115px; height: 100px; }
+  .topology-device--wizard.topology-device--diesel .topology-device__img-wrap { width: 110px; height: 95px; }
+
+  .topology-device--standard.topology-device--pv .topology-device__img-wrap { width: 170px; height: 140px; }
+  .topology-device--standard.topology-device--load .topology-device__img-wrap { width: 155px; height: 130px; }
+  .topology-device--standard.topology-device--ess .topology-device__img-wrap { width: 145px; height: 125px; }
+  .topology-device--standard.topology-device--diesel .topology-device__img-wrap { width: 135px; height: 115px; }
+
+  .topology-device__info {
+    min-width: 120px;
+    max-width: 150px;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.72rem;
+  }
+}

@@ -1,0 +1,692 @@
+pv_panels:
+  default_model: 655W
+  models:
+    430W:
+      display_name: 430W Mono Commercial Module
+      watts: 430
+      price_usd_per_wp: 0.29
+      efficiency_pct: 21
+      length_mm: 1722
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.35
+      description: Entry-level module for small commercial rooftops and distributed PV projects.
+      display_name_en: 430W Mono Commercial Module
+      display_name_zh: 430W 单晶商用组件
+    460W:
+      display_name: 460W Mono High-Density Module
+      watts: 460
+      price_usd_per_wp: 0.3
+      efficiency_pct: 21.2
+      length_mm: 1903
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.34
+      description: Suitable for small and medium rooftops and light ground-mount projects.
+      display_name_en: 460W Mono High-Density Module
+      display_name_zh: 460W 高密度单晶组件
+    500W:
+      display_name: 500W Mono Utility Module
+      watts: 500
+      price_usd_per_wp: 0.3
+      efficiency_pct: 21.5
+      length_mm: 2094
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.34
+      description: Engineering-grade module with balanced cost and logistics efficiency.
+      display_name_en: 500W Mono Utility Module
+      display_name_zh: 500W 单晶实用组件
+    550W:
+      display_name: 550W Mono Standard Module
+      watts: 550
+      price_usd_per_wp: 0.29
+      efficiency_pct: 20
+      length_mm: 2187
+      width_mm: 1102
+      temp_coeff_pct_per_c: -0.35
+      description: Mainstream option for cost-sensitive projects.
+      display_name_en: 550W Mono Standard Module
+      display_name_zh: 550W 单晶标准组件
+    580W:
+      display_name: 580W Mono Mainstream Module
+      watts: 580
+      price_usd_per_wp: 0.3
+      efficiency_pct: 20.9
+      length_mm: 2278
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.34
+      description: Common power class for microgrid and ground-mounted systems.
+      display_name_en: 580W Mono Mainstream Module
+      display_name_zh: 580W 主流单晶组件
+    600W:
+      display_name: 600W Mono Large-Format Module
+      watts: 600
+      price_usd_per_wp: 0.3
+      efficiency_pct: 20.5
+      length_mm: 2278
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.34
+      description: Standard large-format module for commercial and industrial ground systems.
+      display_name_en: 600W Mono Large-Format Module
+      display_name_zh: 600W 大幅面单晶组件
+    620W:
+      display_name: 620W Bifacial Mono Module
+      watts: 620
+      price_usd_per_wp: 0.31
+      efficiency_pct: 21
+      length_mm: 2382
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.34
+      description: Bifacial module for projects targeting higher annual yield.
+      display_name_en: 620W Bifacial Mono Module
+      display_name_zh: 620W 双面单晶组件
+    655W:
+      display_name: 655W High-Efficiency PERC Module
+      watts: 655
+      price_usd_per_wp: 1.05
+      efficiency_pct: 21.3
+      length_mm: 2384
+      width_mm: 1096
+      temp_coeff_pct_per_c: -0.34
+      description: Default baseline module with balanced efficiency, price, and supply stability.
+      display_name_en: 655W High-Efficiency PERC Module
+      display_name_zh: 655W 高效PERC组件
+    670W:
+      display_name: 670W TOPCon N-Type Module
+      watts: 670
+      price_usd_per_wp: 0.33
+      efficiency_pct: 21.7
+      length_mm: 2384
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.3
+      description: For projects prioritizing energy yield per unit area.
+      display_name_en: 670W TOPCon N-Type Module
+      display_name_zh: 670W TOPCon N型组件
+    700W:
+      display_name: 700W TOPCon Bifacial Module
+      watts: 700
+      price_usd_per_wp: 0.35
+      efficiency_pct: 22.5
+      length_mm: 2384
+      width_mm: 1303
+      temp_coeff_pct_per_c: -0.29
+      description: For premium commercial, industrial, and utility applications.
+      display_name_en: 700W TOPCon Bifacial Module
+      display_name_zh: 700W TOPCon 双面组件
+    710W:
+      display_name: 710W Ultra-High-Efficiency TOPCon Module
+      watts: 710
+      price_usd_per_wp: 0.36
+      efficiency_pct: 22.8
+      length_mm: 2384
+      width_mm: 1134
+      temp_coeff_pct_per_c: -0.29
+      description: For projects with limited installation count but high capacity density targets.
+      display_name_en: 710W Ultra-High-Efficiency TOPCon Module
+      display_name_zh: 710W 超高效TOPCon组件
+    720W:
+      display_name: 720W TOPCon Flagship Module
+      watts: 720
+      price_usd_per_wp: 0.37
+      efficiency_pct: 22.9
+      length_mm: 2384
+      width_mm: 1303
+      temp_coeff_pct_per_c: -0.29
+      description: Premium choice for maximizing installed capacity on constrained sites.
+      display_name_en: 720W TOPCon Flagship Module
+      display_name_zh: 720W TOPCon 旗舰组件
+bracket_systems:
+  default_model: standard_32
+  spacing_m: 3.048
+  models:
+    compact_16:
+      display_name: Compact Folding Bracket 16-panel Set
+      panels_per_set: 16
+      area_m2: 78.4
+      footprint_length_m: 14
+      footprint_width_m: 5.6
+      description: Fits narrow sites, rooftops, and projects with limited usable area.
+      display_name_en: Compact Folding Bracket 16-panel Set
+      display_name_zh: 紧凑折叠支架 16块/套
+    compact_24:
+      display_name: Compact Folding Bracket 24-panel Set
+      panels_per_set: 24
+      area_m2: 117.6
+      footprint_length_m: 21
+      footprint_width_m: 5.6
+      description: Compact layout option for small and medium projects.
+      display_name_en: Compact Folding Bracket 24-panel Set
+      display_name_zh: 紧凑折叠支架 24块/套
+    standard_32:
+      display_name: Standard Folding Bracket 32-panel Set
+      panels_per_set: 32
+      area_m2: 156.8
+      footprint_length_m: 28
+      footprint_width_m: 5.6
+      description: Default folding bracket for most ground-mounted microgrid projects.
+      display_name_en: Standard Folding Bracket 32-panel Set
+      display_name_zh: 标准折叠支架 32块/套
+    standard_36:
+      display_name: Standard Folding Bracket 36-panel Set
+      panels_per_set: 36
+      area_m2: 176.4
+      footprint_length_m: 31.5
+      footprint_width_m: 5.6
+      description: Higher-density standard option balancing transport and footprint.
+      display_name_en: Standard Folding Bracket 36-panel Set
+      display_name_zh: 标准折叠支架 36块/套
+    large_48:
+      display_name: Large Folding Bracket 48-panel Set
+      panels_per_set: 48
+      area_m2: 235.2
+      footprint_length_m: 42
+      footprint_width_m: 5.6
+      description: Suitable for commercial and industrial open land.
+      display_name_en: Large Folding Bracket 48-panel Set
+      display_name_zh: 大型折叠支架 48块/套
+    utility_64:
+      display_name: Utility Folding Bracket 64-panel Set
+      panels_per_set: 64
+      area_m2: 313.6
+      footprint_length_m: 56
+      footprint_width_m: 5.6
+      description: Suitable for large ground-mounted projects and centralized microgrid sites.
+      display_name_en: Utility Folding Bracket 64-panel Set
+      display_name_zh: 超大折叠支架 64块/套
+battery_packs:
+  default_model: LFP-16kWh
+  price_usd_per_kwh_fallback: 300
+  models:
+    LFP-5kWh:
+      display_name: 5kWh LFP Battery Pack
+      capacity_kwh: 5
+      price_usd: 1600
+      voltage_v: 48
+      cycle_life: 3500
+      depth_of_discharge_pct: 90
+      display_name_en: 5kWh LFP Battery Pack
+      display_name_zh: 5kWh 磷酸铁锂电池包
+    LFP-8kWh:
+      display_name: 8kWh LFP Battery Pack
+      capacity_kwh: 8
+      price_usd: 2100
+      voltage_v: 51.2
+      cycle_life: 4000
+      depth_of_discharge_pct: 90
+      display_name_en: 8kWh LFP Battery Pack
+      display_name_zh: 8kWh 磷酸铁锂电池包
+    LFP-10kWh:
+      display_name: 10kWh LFP Battery Pack
+      capacity_kwh: 10
+      price_usd: 2500
+      voltage_v: 51.2
+      cycle_life: 4000
+      depth_of_discharge_pct: 90
+      display_name_en: 10kWh LFP Battery Pack
+      display_name_zh: 10kWh 磷酸铁锂电池包
+    LFP-12kWh:
+      display_name: 12kWh LFP Battery Pack
+      capacity_kwh: 12
+      price_usd: 2850
+      voltage_v: 51.2
+      cycle_life: 5000
+      depth_of_discharge_pct: 90
+      display_name_en: 12kWh LFP Battery Pack
+      display_name_zh: 12kWh 磷酸铁锂电池包
+    LFP-15kWh:
+      display_name: 15kWh LFP Battery Pack
+      capacity_kwh: 15
+      price_usd: 3050
+      voltage_v: 51.2
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 15kWh LFP Battery Pack
+      display_name_zh: 15kWh 磷酸铁锂电池包
+    LFP-16kWh:
+      display_name: 16kWh Standard Battery Pack
+      capacity_kwh: 16
+      price_usd: 3100
+      voltage_v: 51.2
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      description: Default standard battery module for routine project sizing.
+      display_name_en: 16kWh Standard Battery Pack
+      display_name_zh: 16kWh 标准电池包
+    LFP-20kWh:
+      display_name: 20kWh Battery Pack
+      capacity_kwh: 20
+      price_usd: 6000
+      voltage_v: 51.2
+      cycle_life: 4000
+      depth_of_discharge_pct: 90
+      display_name_en: 20kWh Battery Pack
+      display_name_zh: 20kWh 电池包
+    LFP-25kWh:
+      display_name: 25kWh High-Capacity Battery Pack
+      capacity_kwh: 25
+      price_usd: 7250
+      voltage_v: 51.2
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 25kWh High-Capacity Battery Pack
+      display_name_zh: 25kWh 高容量电池包
+    LFP-30kWh:
+      display_name: 30kWh Commercial Battery Pack
+      capacity_kwh: 30
+      price_usd: 8400
+      voltage_v: 51.2
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 30kWh Commercial Battery Pack
+      display_name_zh: 30kWh 商业电池包
+    LFP-40kWh:
+      display_name: 40kWh Large-Cabinet Battery Pack
+      capacity_kwh: 40
+      price_usd: 11200
+      voltage_v: 51.2
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 40kWh Large-Cabinet Battery Pack
+      display_name_zh: 40kWh 大柜电池包
+    LFP-50kWh:
+      display_name: 50kWh Extra-Large Battery Pack
+      capacity_kwh: 50
+      price_usd: 13500
+      voltage_v: 51.2
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 50kWh Extra-Large Battery Pack
+      display_name_zh: 50kWh 超大电池包
+    LFP-100kWh:
+      display_name: 100kWh Containerized Storage Cabinet
+      capacity_kwh: 100
+      price_usd: 25500
+      voltage_v: 512
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 100kWh Containerized Storage Cabinet
+      display_name_zh: 100kWh 集装箱储能柜
+    LFP-120kWh:
+      display_name: 120kWh Commercial Storage Cabinet
+      capacity_kwh: 120
+      price_usd: 29400
+      voltage_v: 512
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 120kWh Commercial Storage Cabinet
+      display_name_zh: 120kWh 商业储能柜
+    LFP-215kWh:
+      display_name: 215kWh Commercial Storage Cabinet
+      capacity_kwh: 215
+      price_usd: 49450
+      voltage_v: 768
+      cycle_life: 6000
+      depth_of_discharge_pct: 90
+      display_name_en: 215kWh Commercial Storage Cabinet
+      display_name_zh: 215kWh 商业储能柜
+    LFP-261kWh:
+      display_name: 261kWh Liquid-Cooled Storage Cabinet
+      capacity_kwh: 261
+      price_usd: 57420
+      voltage_v: 768
+      cycle_life: 7000
+      depth_of_discharge_pct: 92
+      display_name_en: 261kWh Liquid-Cooled Storage Cabinet
+      display_name_zh: 261kWh 液冷储能柜
+inverters:
+  models:
+    INV-3000W-240V:
+      display_name: 3kW Bidirectional Inverter 120/240V
+      power_kw: 3
+      price_usd: 4200
+      voltage_levels:
+        - 120V/240V
+      packs_per_inverter: 4
+      description: Suitable for small residential and light-load systems.
+      display_name_en: 3kW Bidirectional Inverter 120/240V
+      display_name_zh: 3kW 双向逆变器 120/240V
+    INV-5000W-240V:
+      display_name: 5kW Bidirectional Inverter 120/240V
+      power_kw: 18
+      price_usd: 7500
+      voltage_levels:
+        - 120V/240V
+      packs_per_inverter: 6
+      description: Default residential inverter.
+      display_name_en: 5kW Bidirectional Inverter 120/240V
+      display_name_zh: 5kW 双向逆变器 120/240V
+    INV-6000W-240V:
+      display_name: 6kW Bidirectional Inverter 120/240V
+      power_kw: 6
+      price_usd: 7900
+      voltage_levels:
+        - 120V/240V
+      packs_per_inverter: 6
+      description: Suitable for residential sites with slightly higher peak load.
+      display_name_en: 6kW Bidirectional Inverter 120/240V
+      display_name_zh: 6kW 双向逆变器 120/240V
+    INV-7500W-208V:
+      display_name: 7.5kW Three-Phase Inverter 120/208V
+      power_kw: 7.5
+      price_usd: 7500
+      voltage_levels:
+        - 120V/208V
+      packs_per_inverter: 6
+      description: Suitable for light commercial three-phase applications.
+      display_name_en: 7.5kW Three-Phase Inverter 120/208V
+      display_name_zh: 7.5kW 三相逆变器 120/208V
+    INV-10000W-208V:
+      display_name: 10kW Three-Phase Inverter 120/208V
+      power_kw: 10
+      price_usd: 9800
+      voltage_levels:
+        - 120V/208V
+      packs_per_inverter: 8
+      description: Suitable for retail, restaurant, and light industrial loads.
+      display_name_en: 10kW Three-Phase Inverter 120/208V
+      display_name_zh: 10kW 三相逆变器 120/208V
+    INV-12000W-480V:
+      display_name: 12kW Industrial Inverter 277/480V
+      power_kw: 12
+      price_usd: 12800
+      voltage_levels:
+        - 277V/480V
+      packs_per_inverter: 8
+      description: Suitable for medium industrial and facility applications.
+      display_name_en: 12kW Industrial Inverter 277/480V
+      display_name_zh: 12kW 工业逆变器 277/480V
+    INV-15000W-480V:
+      display_name: 15kW Industrial Inverter 277/480V
+      power_kw: 15
+      price_usd: 15000
+      voltage_levels:
+        - 220V/380V
+        - 230V/400V
+        - 277V/480V
+      packs_per_inverter: 8
+      description: Default industrial inverter.
+      display_name_en: 15kW Industrial Inverter 277/480V
+      display_name_zh: 15kW 工业逆变器 277/480V
+    INV-20000W-480V:
+      display_name: 20kW Industrial Inverter 277/480V
+      power_kw: 20
+      price_usd: 18800
+      voltage_levels:
+        - 277V/480V
+      packs_per_inverter: 10
+      description: Suitable for larger industrial and off-grid systems.
+      display_name_en: 20kW Industrial Inverter 277/480V
+      display_name_zh: 20kW 工业逆变器 277/480V
+    INV-50000W-480V:
+      display_name: 50kW Commercial PCS 277/480V
+      power_kw: 50
+      price_usd: 39800
+      voltage_levels:
+        - 277V/480V
+      packs_per_inverter: 16
+      description: Suitable for project-scale commercial storage systems.
+      display_name_en: 50kW Commercial PCS 277/480V
+      display_name_zh: 50kW 商业PCS 277/480V
+    INV-100000W-480V:
+      display_name: 100kW Storage Converter 277/480V
+      power_kw: 100
+      price_usd: 73500
+      voltage_levels:
+        - 277V/480V
+      packs_per_inverter: 24
+      description: Suitable for large microgrids and campus-scale projects.
+      display_name_en: 100kW Storage Converter 277/480V
+      display_name_zh: 100kW 储能变流器 277/480V
+  voltage_default_map:
+    120V/240V: INV-5000W-240V
+    120V/208V: INV-10000W-208V
+    220V/380V: INV-15000W-480V
+    230V/400V: INV-15000W-480V
+    277V/480V: INV-15000W-480V
+diesel_generators:
+  price_usd_per_kw: 1125
+  models:
+    DG-10kW:
+      display_name: 10kW Diesel Generator
+      power_kw: 10
+      price_usd: 12000
+      fuel_efficiency_kwh_per_liter: 3.2
+      display_name_en: 10kW Diesel Generator
+      display_name_zh: 10kW 柴油发电机
+    DG-15kW:
+      display_name: 15kW Diesel Generator
+      power_kw: 15
+      price_usd: 17500
+      fuel_efficiency_kwh_per_liter: 3.3
+      display_name_en: 15kW Diesel Generator
+      display_name_zh: 15kW 柴油发电机
+    DG-20kW:
+      display_name: 20kW Diesel Generator
+      power_kw: 20
+      price_usd: 22500
+      fuel_efficiency_kwh_per_liter: 3.5
+      display_name_en: 20kW Diesel Generator
+      display_name_zh: 20kW 柴油发电机
+    DG-25kW:
+      display_name: 25kW Diesel Generator
+      power_kw: 25
+      price_usd: 28000
+      fuel_efficiency_kwh_per_liter: 3.5
+      display_name_en: 25kW Diesel Generator
+      display_name_zh: 25kW 柴油发电机
+    DG-30kW:
+      display_name: 30kW Diesel Generator
+      power_kw: 30
+      price_usd: 33500
+      fuel_efficiency_kwh_per_liter: 3.5
+      fuel_intercept_coeff: 0.033
+      fuel_slope_coeff: 0.224
+      display_name_en: 30kW Diesel Generator
+      display_name_zh: 30kW 柴油发电机
+    DG-40kW:
+      display_name: 40kW Diesel Generator
+      power_kw: 40
+      price_usd: 45000
+      fuel_efficiency_kwh_per_liter: 3.5
+      display_name_en: 40kW Diesel Generator
+      display_name_zh: 40kW 柴油发电机
+    DG-50kW:
+      display_name: 50kW Diesel Generator
+      power_kw: 50
+      price_usd: 56000
+      fuel_efficiency_kwh_per_liter: 3.55
+      display_name_en: 50kW Diesel Generator
+      display_name_zh: 50kW 柴油发电机
+    DG-60kW:
+      display_name: 60kW Diesel Generator
+      power_kw: 60
+      price_usd: 67500
+      fuel_efficiency_kwh_per_liter: 3.6
+      display_name_en: 60kW Diesel Generator
+      display_name_zh: 60kW 柴油发电机
+    DG-80kW:
+      display_name: 80kW Diesel Generator
+      power_kw: 80
+      price_usd: 90000
+      fuel_efficiency_kwh_per_liter: 3.7
+      display_name_en: 80kW Diesel Generator
+      display_name_zh: 80kW 柴油发电机
+    DG-100kW:
+      display_name: 100kW Diesel Generator
+      power_kw: 100
+      price_usd: 112500
+      fuel_efficiency_kwh_per_liter: 3.8
+      display_name_en: 100kW Diesel Generator
+      display_name_zh: 100kW 柴油发电机
+    DG-120kW:
+      display_name: 120kW Diesel Generator
+      power_kw: 120
+      price_usd: 132000
+      fuel_efficiency_kwh_per_liter: 3.85
+      display_name_en: 120kW Diesel Generator
+      display_name_zh: 120kW 柴油发电机
+    DG-150kW:
+      display_name: 150kW Diesel Generator
+      power_kw: 150
+      price_usd: 165000
+      fuel_efficiency_kwh_per_liter: 3.9
+      display_name_en: 150kW Diesel Generator
+      display_name_zh: 150kW 柴油发电机
+    DG-200kW:
+      display_name: 200kW Diesel Generator
+      power_kw: 200
+      price_usd: 220000
+      fuel_efficiency_kwh_per_liter: 4
+      display_name_en: 200kW Diesel Generator
+      display_name_zh: 200kW 柴油发电机
+    DG-250kW:
+      display_name: 250kW Diesel Generator
+      power_kw: 250
+      price_usd: 273000
+      fuel_efficiency_kwh_per_liter: 4.05
+      display_name_en: 250kW Diesel Generator
+      display_name_zh: 250kW 柴油发电机
+    DG-300kW:
+      display_name: 300kW Industrial Diesel Generator
+      power_kw: 300
+      price_usd: 324000
+      fuel_efficiency_kwh_per_liter: 4.1
+      display_name_en: 300kW Industrial Diesel Generator
+      display_name_zh: 300kW 工业柴油发电机
+    DG-400kW:
+      display_name: 400kW Industrial Diesel Generator
+      power_kw: 400
+      price_usd: 420000
+      fuel_efficiency_kwh_per_liter: 4.15
+      display_name_en: 400kW Industrial Diesel Generator
+      display_name_zh: 400kW 工业柴油发电机
+    DG-500kW:
+      display_name: 500kW Industrial Diesel Generator
+      power_kw: 500
+      price_usd: 515000
+      fuel_efficiency_kwh_per_liter: 4.2
+      display_name_en: 500kW Industrial Diesel Generator
+      display_name_zh: 500kW 工业柴油发电机
+integrated_pv_storage:
+  models:
+    small:
+      display_name: Small PV-Storage Unit
+      pv_kw: 5
+      battery_kwh: 10
+      battery_kw: 5
+      diesel_ratio: 0.5
+      display_name_en: Small PV-Storage Unit
+      display_name_zh: 小型光储一体机
+    medium:
+      display_name: Medium PV-Storage Unit
+      pv_kw: 10
+      battery_kwh: 20
+      battery_kw: 10
+      diesel_ratio: 1
+      display_name_en: Medium PV-Storage Unit
+      display_name_zh: 中型光储一体机
+    large:
+      display_name: Large PV-Storage Unit
+      pv_kw: 20
+      battery_kwh: 40
+      battery_kw: 20
+      diesel_ratio: 2
+      display_name_en: Large PV-Storage Unit
+      display_name_zh: 大型光储一体机
+    xlarge:
+      display_name: Extra-Large PV-Storage Unit
+      pv_kw: 30
+      battery_kwh: 60
+      battery_kw: 30
+      diesel_ratio: 2.5
+      display_name_en: Extra-Large PV-Storage Unit
+      display_name_zh: 超大型光储一体机
+standard_products:
+  packages:
+    small:
+      display_name: Small PV-Storage-Diesel
+      panel_model: 655W
+      bracket_model: standard_32
+      bracket_sets: 4
+      annual_load_kwh: 131400
+      peak_load_kw: 50
+      load_type: industrial
+      diesel_model: DG-20kW
+      battery_pack_model: LFP-16kWh
+      battery_pack_count: 16
+      display_name_en: Small PV-Storage-Diesel
+      display_name_zh: 小型光储柴一体
+    medium:
+      display_name: Medium PV-Storage-Diesel
+      panel_model: 655W
+      bracket_model: standard_32
+      bracket_sets: 8
+      annual_load_kwh: 262800
+      peak_load_kw: 100
+      load_type: industrial
+      diesel_model: DG-80kW
+      battery_pack_model: LFP-16kWh
+      battery_pack_count: 32
+      display_name_en: Medium PV-Storage-Diesel
+      display_name_zh: 中型光储柴一体
+    large:
+      display_name: Large PV-Storage-Diesel
+      panel_model: 655W
+      bracket_model: standard_32
+      bracket_sets: 16
+      annual_load_kwh: 525600
+      peak_load_kw: 200
+      load_type: industrial
+      diesel_model: DG-150kW
+      battery_pack_model: LFP-16kWh
+      battery_pack_count: 64
+      display_name_en: Large PV-Storage-Diesel
+      display_name_zh: 大型光储柴一体
+home_bg_defaults:
+  pv_kw: 83.8
+  annual_load_kwh: 131400
+  diesel_kw: 40
+  diesel_price_usd: 0.95
+  battery_kwh: 256
+  storage_days: 1
+site_layout:
+  tray_length_m: 6.2
+  tray_width_m: 4.4
+  diesel_reserved_area_m2: 75
+  inverters_per_tray: 2
+  max_layout_area_m2: 40000
+simulation_defaults:
+  system_efficiency: 0.78
+  default_year: 2020
+  default_load_type: residential
+  diesel_dispatch_mode: cc
+  pv_generation_correction_factor: 1.10
+  converter_kw_per_pv_kw: 0.50
+  cycle_charging_target_load_pu: 0.58
+  cycle_charging_start_soc_pu: 0.42
+economic_defaults:
+  diesel_price_usd_per_liter: 1.0
+  electricity_price_usd_per_kwh: 0.35
+  project_years: 25
+  nominal_discount_rate_pct: 10
+  inflation_rate_pct: 2
+accessories:
+  pv_mounting_cost_per_set_usd: 19050
+  intl_transport:
+    base_usd: 3000
+    per_bracket_set_usd: 1950
+  installation:
+    base_usd: 1000
+    per_bracket_set_usd: 1000
+  accessory_materials:
+    base_usd: 8500
+    per_bracket_set_usd: 5000
+  other_initial_usd: 4200
+  battery_pallet:
+    per_pack_usd: 250
+    reference_pack_kwh: 10
+  ems_addons:
+    prediction_control_usd: 5000
+pricing:
+  profit_margin: 0.2
+  pass_through_items:
+    - diesel_generator_cost
+    - installation_cost

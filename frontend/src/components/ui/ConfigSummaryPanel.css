@@ -1,0 +1,91 @@
+.config-summary-panel {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+  min-width: 220px;
+  max-width: 280px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+  border-radius: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+  padding: 0.85rem 1rem;
+}
+
+.config-summary-panel__title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #1a365d;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.config-summary-panel__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.config-summary-panel__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.config-summary-panel__sub {
+  padding-left: 0.75rem;
+  border-left: 2px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.config-summary-panel__sub-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+}
+
+.config-summary-panel__sub-label {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.config-summary-panel__sub-value {
+  color: #64748b;
+  font-weight: 500;
+  text-align: right;
+}
+
+.config-summary-panel__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.config-summary-panel__label {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.config-summary-panel__value {
+  color: #1e293b;
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .config-summary-panel {
+    min-width: 180px;
+    max-width: 240px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.72rem;
+  }
+}

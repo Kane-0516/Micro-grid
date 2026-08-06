@@ -1,0 +1,78 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: microgrid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: microgrid_products
+      POSTGRES_USER: microgrid
+      POSTGRES_PASSWORD: microgrid
+    ports:
+      - "5432:5432"
+    volumes:
+      - microgrid-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U microgrid -d microgrid_products"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - microgrid-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: microgrid-backend
+    restart: unless-stopped
+    ports:
+      - "6001:6001"
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 6001
+      DEBUG: "false"
+      DATABASE_URL: postgresql://microgrid:microgrid@postgres:5432/microgrid_products
+      GEOCODER_DEFAULT_REGION: us
+      GEOCODER_API_URL: http://host.docker.internal:14000/v1/search
+      GEOCODER_REVERSE_API_URL: http://host.docker.internal:14000/v1/reverse
+      GEOCODER_API_URL_CN: http://host.docker.internal:14000/v1/search
+      GEOCODER_REVERSE_API_URL_CN: http://host.docker.internal:14000/v1/reverse
+      GEOCODER_API_URL_US: http://host.docker.internal:14000/v1/search
+      GEOCODER_REVERSE_API_URL_US: http://host.docker.internal:14000/v1/reverse
+      CORS_ORIGINS: http://localhost:8081,http://127.0.0.1:8081
+    volumes:
+      - ./backend/products.yaml:/backend/products.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - microgrid-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6001/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: microgrid-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - microgrid-net
+
+networks:
+  microgrid-net:
+    driver: bridge
+
+volumes:
+  microgrid-postgres-data:
