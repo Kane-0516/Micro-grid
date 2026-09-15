@@ -1,4 +1,7 @@
-﻿# Dependencies
+﻿# Internal docs — not meant to be on GitHub
+/docs/
+
+# Dependencies
 node_modules/
 frontend/node_modules/
 
