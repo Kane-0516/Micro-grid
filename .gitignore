@@ -1,5 +1,8 @@
-﻿# Internal docs — not meant to be on GitHub
-/docs/
+﻿# Internal docs — not meant to be on GitHub, except the E2B tool guide
+# (that one travels with the code an agent's sandbox clones, so it needs
+# to actually be in the repo).
+/docs/*
+!/docs/E2B_AGENT_TOOL.md
 
 # Dependencies
 node_modules/
