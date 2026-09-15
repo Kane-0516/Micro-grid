@@ -45,7 +45,7 @@ docker compose down
 3. 运行 `python backend/e2b_tool.py <calculate|optimize|layout_optimize> '<json>'`，从 stdout 读一行 JSON 结果；
 4. 销毁沙箱，不留任何状态。
 
-改代码只需要 `git push`，不用重新构建模板。完整的调用示例（Python SDK 代码、私有仓库怎么处理、注意事项）见 [`docs/E2B_AGENT_TOOL.md`](docs/E2B_AGENT_TOOL.md)——这份文档跟着代码一起被跟踪和推送（`docs/` 下其余内容不推送到 GitHub，只有这一份是例外）。
+改代码只需要 `git push`，不用重新构建模板。完整的调用示例（Python SDK 代码、私有仓库怎么处理、注意事项）见 [`docs/E2B_AGENT_TOOL.md`](docs/E2B_AGENT_TOOL.md)
 
 ## 目录结构
 
