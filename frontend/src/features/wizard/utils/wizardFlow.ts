@@ -25,22 +25,53 @@ type Translator = (key: string) => string;
 const SITE_INFO_ZH = '场地信息';
 const PV_MODULE_ZH = '光伏组件';
 
+const COMMON_BRANCH_STEPS: Partial<Record<number, StepType>> = {
+  1: 'location',
+  2: 'area',
+};
+
+const KNOWN_LOAD_BRANCH_STEPS: Partial<Record<number, StepType>> = {
+  3: 'load-input',
+  4: 'generator',
+  5: 'voltage',
+  6: 'ems',
+};
+
+const DIY_BRANCH_STEPS: Partial<Record<number, StepType>> = {
+  3: 'diy-inverter',
+  4: 'diy-storage',
+  5: 'diy-generator',
+  6: 'ems',
+};
+
+const KNOWN_LOAD_STEPS: Partial<Record<number, StepType>> = {
+  1: 'location',
+  2: 'area',
+  3: 'load-input',
+  4: 'generator',
+  5: 'voltage',
+  6: 'ems',
+};
+
+const DIY_STEPS: Partial<Record<number, StepType>> = {
+  1: 'diy-area-setup',
+  2: 'diy-pv-setup',
+  3: 'diy-inverter',
+  4: 'diy-storage',
+  5: 'diy-generator',
+  6: 'ems',
+};
+
 function getCustomBranchStepType(branch: CustomFlowBranch | null | undefined, step: number): StepType {
-  if (step === 1) return 'location';
-  if (step === 2) return 'area';
+  const commonStep = COMMON_BRANCH_STEPS[step];
+  if (commonStep) return commonStep;
 
   if (branch === 'known-load') {
-    if (step === 3) return 'load-input';
-    if (step === 4) return 'generator';
-    if (step === 5) return 'voltage';
-    if (step === 6) return 'ems';
+    return KNOWN_LOAD_BRANCH_STEPS[step] ?? '';
   }
 
   if (branch === 'diy') {
-    if (step === 3) return 'diy-inverter';
-    if (step === 4) return 'diy-storage';
-    if (step === 5) return 'diy-generator';
-    if (step === 6) return 'ems';
+    return DIY_BRANCH_STEPS[step] ?? '';
   }
 
   return '';
@@ -56,29 +87,20 @@ export function getStepType(
   }
 
   if (scenario === 'known-load') {
-    if (step === 1) return 'location';
-    if (step === 2) return 'area';
-    if (step === 3) return 'load-input';
-    if (step === 4) return 'generator';
-    if (step === 5) return 'voltage';
-    if (step === 6) return 'ems';
+    return KNOWN_LOAD_STEPS[step] ?? '';
   }
 
   if (scenario === 'diy') {
-    if (step === 1) return 'diy-area-setup';
-    if (step === 2) return 'diy-pv-setup';
-    if (step === 3) return 'diy-inverter';
-    if (step === 4) return 'diy-storage';
-    if (step === 5) return 'diy-generator';
-    if (step === 6) return 'ems';
+    return DIY_STEPS[step] ?? '';
   }
 
   return '';
 }
 
-export function getTotalWizardSteps(scenario: Scenario | null): number {
-  if (scenario === 'custom' || scenario === 'known-load' || scenario === 'diy') return 6;
-  return 6;
+export const TOTAL_WIZARD_STEPS = 6;
+
+export function getTotalWizardSteps(_scenario: Scenario | null): number {
+  return TOTAL_WIZARD_STEPS;
 }
 
 export function canProceedStep(config: ConfigData, stepType: StepType): boolean {
@@ -130,6 +152,122 @@ export function canProceedStep(config: ConfigData, stepType: StepType): boolean 
   }
 }
 
+function getPeakSunBlocker(isEn: boolean, apiAvailable?: boolean | null): string {
+  if (apiAvailable === false) {
+    return isEn
+      ? 'the backend API is unavailable, so solar parameters could not be loaded'
+      : '后端接口不可用，日照参数未能加载';
+  }
+  return isEn ? 'wait for solar parameters to finish loading' : '等待日照参数加载完成';
+}
+
+function getLocationBlockers(
+  config: ConfigData,
+  isEn: boolean,
+  apiAvailable?: boolean | null,
+): string[] {
+  const blockers: string[] = [];
+  if (config.latitude == null || config.longitude == null) {
+    blockers.push(
+      isEn
+        ? 'select a project location using search, current location, or the map'
+        : '选择项目地点，可使用搜索、当前位置或地图点选',
+    );
+  }
+  if (!(config.availableAreaM2 && config.availableAreaM2 > 0)) {
+    blockers.push(
+      isEn
+        ? 'enter the usable area, or draw the site boundary on the map to calculate it automatically'
+        : '填写可用面积，或在地图框选场地后自动计算面积',
+    );
+  }
+  if (config.latitude != null && config.longitude != null && !config.peakSunHoursPerDay) {
+    blockers.push(getPeakSunBlocker(isEn, apiAvailable));
+  }
+  return blockers;
+}
+
+function getDiyAreaSetupBlockers(config: ConfigData, isEn: boolean): string[] {
+  const blockers: string[] = [];
+  if (config.latitude == null || config.longitude == null) {
+    blockers.push(
+      isEn
+        ? 'select a project location using search, current location, or the map'
+        : '选择项目地点，可使用搜索、当前位置或地图点选',
+    );
+  }
+  if (!(config.availableAreaM2 && config.availableAreaM2 > 0)) {
+    blockers.push(
+      isEn
+        ? 'enter the usable area, or draw the site boundary on the map to calculate it automatically'
+        : '填写可用面积，或在地图框选场地后自动计算面积',
+    );
+  }
+  return blockers;
+}
+
+function getLoadInputBlockers(config: ConfigData, isEn: boolean): string[] {
+  return config.annualLoadKwh && config.annualLoadKwh > 0
+    ? []
+    : [isEn ? 'enter annual load consumption' : '填写年用电量'];
+}
+
+function getBracketSetsBlockers(config: ConfigData, isEn: boolean): string[] {
+  return config.bracketSets && config.bracketSets > 0
+    ? []
+    : [isEn ? 'select the PV set count' : '选择光伏支架套数'];
+}
+
+function getVoltageBlockers(config: ConfigData, isEn: boolean): string[] {
+  return config.voltageLevel ? [] : [isEn ? 'select the output voltage' : '选择输出电压'];
+}
+
+function getDiyInverterBlockers(config: ConfigData, isEn: boolean): string[] {
+  const blockers: string[] = [];
+  if (!(config.inverterCount && config.inverterCount > 0)) {
+    blockers.push(isEn ? 'set the inverter quantity' : '填写逆变器数量');
+  }
+  if (!(config.inverterKw && config.inverterKw > 0)) {
+    blockers.push(isEn ? 'set the inverter power' : '填写逆变器功率');
+  }
+  return blockers;
+}
+
+function getDiyStorageBlockers(config: ConfigData, isEn: boolean): string[] {
+  return config.batteryPackCount && config.batteryPackCount > 0
+    ? []
+    : [isEn ? 'set the battery pack quantity' : '填写电池包数量'];
+}
+
+function getTrayBlockers(config: ConfigData, isEn: boolean): string[] {
+  return config.trayCapacity ? [] : [isEn ? 'select the battery tray capacity' : '选择电池托盘容量'];
+}
+
+function getStorageBlockers(config: ConfigData, isEn: boolean): string[] {
+  return config.storageDays ? [] : [isEn ? 'select the storage autonomy' : '选择储能天数'];
+}
+
+type StepBlockerHandler = (
+  config: ConfigData,
+  isEn: boolean,
+  apiAvailable?: boolean | null,
+) => string[];
+
+const STEP_BLOCKER_HANDLERS: Partial<Record<StepType, StepBlockerHandler>> = {
+  location: getLocationBlockers,
+  'diy-area-setup': (config, isEn) => getDiyAreaSetupBlockers(config, isEn),
+  'load-input': (config, isEn) => getLoadInputBlockers(config, isEn),
+  area: (config, isEn) => getBracketSetsBlockers(config, isEn),
+  brackets: (config, isEn) => getBracketSetsBlockers(config, isEn),
+  'diy-pv-setup': (config, isEn) => getBracketSetsBlockers(config, isEn),
+  voltage: (config, isEn) => getVoltageBlockers(config, isEn),
+  'diy-setup': (config, isEn) => getVoltageBlockers(config, isEn),
+  'diy-inverter': (config, isEn) => getDiyInverterBlockers(config, isEn),
+  'diy-storage': (config, isEn) => getDiyStorageBlockers(config, isEn),
+  tray: (config, isEn) => getTrayBlockers(config, isEn),
+  storage: (config, isEn) => getStorageBlockers(config, isEn),
+};
+
 export function getStepProceedBlockers(
   config: ConfigData,
   stepType: StepType,
@@ -137,85 +275,8 @@ export function getStepProceedBlockers(
   apiAvailable?: boolean | null,
 ): string[] {
   const isEn = lang === 'en';
-
-  switch (stepType) {
-    case 'location': {
-      const blockers: string[] = [];
-      if (config.latitude == null || config.longitude == null) {
-        blockers.push(
-          isEn
-            ? 'select a project location using search, current location, or the map'
-            : '选择项目地点，可使用搜索、当前位置或地图点选',
-        );
-      }
-      if (!(config.availableAreaM2 && config.availableAreaM2 > 0)) {
-        blockers.push(
-          isEn
-            ? 'enter the usable area, or draw the site boundary on the map to calculate it automatically'
-            : '填写可用面积，或在地图框选场地后自动计算面积',
-        );
-      }
-      if (config.latitude != null && config.longitude != null && !config.peakSunHoursPerDay) {
-        blockers.push(
-          apiAvailable === false
-            ? (isEn ? 'the backend API is unavailable, so solar parameters could not be loaded' : '后端接口不可用，日照参数未能加载')
-            : (isEn ? 'wait for solar parameters to finish loading' : '等待日照参数加载完成'),
-        );
-      }
-      return blockers;
-    }
-    case 'diy-area-setup': {
-      const blockers: string[] = [];
-      if (config.latitude == null || config.longitude == null) {
-        blockers.push(
-          isEn
-            ? 'select a project location using search, current location, or the map'
-            : '选择项目地点，可使用搜索、当前位置或地图点选',
-        );
-      }
-      if (!(config.availableAreaM2 && config.availableAreaM2 > 0)) {
-        blockers.push(
-          isEn
-            ? 'enter the usable area, or draw the site boundary on the map to calculate it automatically'
-            : '填写可用面积，或在地图框选场地后自动计算面积',
-        );
-      }
-      return blockers;
-    }
-    case 'load-input':
-      return config.annualLoadKwh && config.annualLoadKwh > 0
-        ? []
-        : [isEn ? 'enter annual load consumption' : '填写年用电量'];
-    case 'area':
-    case 'brackets':
-    case 'diy-pv-setup':
-      return config.bracketSets && config.bracketSets > 0
-        ? []
-        : [isEn ? 'select the PV set count' : '选择光伏支架套数'];
-    case 'voltage':
-    case 'diy-setup':
-      return config.voltageLevel ? [] : [isEn ? 'select the output voltage' : '选择输出电压'];
-    case 'diy-inverter': {
-      const blockers: string[] = [];
-      if (!(config.inverterCount && config.inverterCount > 0)) {
-        blockers.push(isEn ? 'set the inverter quantity' : '填写逆变器数量');
-      }
-      if (!(config.inverterKw && config.inverterKw > 0)) {
-        blockers.push(isEn ? 'set the inverter power' : '填写逆变器功率');
-      }
-      return blockers;
-    }
-    case 'diy-storage':
-      return config.batteryPackCount && config.batteryPackCount > 0
-        ? []
-        : [isEn ? 'set the battery pack quantity' : '填写电池包数量'];
-    case 'tray':
-      return config.trayCapacity ? [] : [isEn ? 'select the battery tray capacity' : '选择电池托盘容量'];
-    case 'storage':
-      return config.storageDays ? [] : [isEn ? 'select the storage autonomy' : '选择储能天数'];
-    default:
-      return [];
-  }
+  const handler = STEP_BLOCKER_HANDLERS[stepType];
+  return handler ? handler(config, isEn, apiAvailable) : [];
 }
 
 export function getStepTitle(stepType: StepType, lang: string, t: Translator): string {

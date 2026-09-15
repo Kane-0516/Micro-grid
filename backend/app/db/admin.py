@@ -1,11 +1,11 @@
 """CRUD helpers for product configuration management."""
+
 from __future__ import annotations
 
 from typing import Any, Iterable
 
 from psycopg import Connection
 from psycopg.types.json import Jsonb
-
 
 CATEGORY_CONFIG: dict[str, dict[str, Any]] = {
     "pv_panels": {
@@ -180,6 +180,54 @@ BLOB_SETTING_KEYS = {
     "pricing",
 }
 
+STRING_SETTING_KEYS = {
+    "pv_panels.default_model",
+    "bracket_systems.default_model",
+    "battery_packs.default_model",
+}
+
+NON_NEGATIVE_NUMBER_SETTING_KEYS = {
+    "bracket_systems.spacing_m",
+    "battery_packs.price_usd_per_kwh_fallback",
+    "diesel_generators.price_usd_per_kw",
+}
+
+SIMULATION_DEFAULT_FIELDS = {
+    "system_efficiency",
+    "default_year",
+    "default_load_type",
+    "diesel_dispatch_mode",
+    "pv_generation_correction_factor",
+    "converter_kw_per_pv_kw",
+    "cycle_charging_target_load_pu",
+    "cycle_charging_start_soc_pu",
+}
+
+ECONOMIC_DEFAULT_NUMBER_FIELDS = (
+    ("diesel_price_usd_per_liter", 0),
+    ("electricity_price_usd_per_kwh", 0),
+    ("project_years", 1),
+    ("nominal_discount_rate_pct", None),
+    ("inflation_rate_pct", None),
+)
+
+HOME_BG_NUMBER_FIELDS = (
+    "pv_kw",
+    "annual_load_kwh",
+    "diesel_kw",
+    "diesel_price_usd",
+    "battery_kwh",
+    "storage_days",
+)
+
+SITE_LAYOUT_NUMBER_FIELDS = (
+    "tray_length_m",
+    "tray_width_m",
+    "diesel_reserved_area_m2",
+    "inverters_per_tray",
+    "max_layout_area_m2",
+)
+
 
 def _require_mapping(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -193,7 +241,9 @@ def _require_string(value: Any, label: str) -> str:
     return value.strip()
 
 
-def _require_number(value: Any, label: str, *, minimum: float | None = None) -> float:
+def _require_number(
+    value: Any, label: str, *, minimum: float | None = None
+) -> float:
     if not isinstance(value, (int, float)) or isinstance(value, bool):
         raise ValueError(f"{label} must be a number.")
     numeric = float(value)
@@ -211,22 +261,69 @@ def _require_string_list(value: Any, label: str) -> list[str]:
     return cleaned
 
 
-def _validate_known_fields(data: dict[str, Any], allowed_fields: Iterable[str], label: str) -> None:
+def _validate_known_fields(
+    data: dict[str, Any], allowed_fields: Iterable[str], label: str
+) -> None:
     unknown = sorted(set(data.keys()) - set(allowed_fields))
     if unknown:
-        raise ValueError(f"{label} contains unknown fields: {', '.join(unknown)}.")
+        raise ValueError(
+            f"{label} contains unknown fields: {', '.join(unknown)}."
+        )
 
 
-def _validate_required_fields(data: dict[str, Any], required_fields: Iterable[str], label: str) -> None:
+def _validate_required_fields(
+    data: dict[str, Any], required_fields: Iterable[str], label: str
+) -> None:
     missing = sorted(field for field in required_fields if field not in data)
     if missing:
-        raise ValueError(f"{label} is missing required fields: {', '.join(missing)}.")
+        raise ValueError(
+            f"{label} is missing required fields: {', '.join(missing)}."
+        )
 
 
-def _validate_product_payload(category: str, key: str, data: dict[str, Any]) -> None:
+def _validate_battery_payload(data: dict[str, Any]) -> None:
+    dod = _require_number(
+        data["depth_of_discharge_pct"],
+        "battery_packs:depth_of_discharge_pct",
+        minimum=0,
+    )
+    if dod > 100:
+        raise ValueError("battery_packs:depth_of_discharge_pct must be <= 100.")
+
+
+def _validate_inverter_payload(data: dict[str, Any]) -> None:
+    voltage_levels = data["voltage_levels"]
+    if not isinstance(voltage_levels, list) or not voltage_levels:
+        raise ValueError("inverters:voltage_levels must be a non-empty list.")
+    for item in voltage_levels:
+        _require_string(item, "inverters:voltage_levels")
+
+
+def _validate_standard_package_payload(data: dict[str, Any]) -> None:
+    _require_string(data["load_type"], "standard_packages:load_type")
+
+
+PRODUCT_PAYLOAD_VALIDATORS = {
+    "pv_panels": lambda data: _require_number(
+        data["efficiency_pct"], "pv_panels:efficiency_pct", minimum=0
+    ),
+    "battery_packs": _validate_battery_payload,
+    "inverters": _validate_inverter_payload,
+    "standard_packages": _validate_standard_package_payload,
+}
+
+
+def _validate_product_payload(
+    category: str, key: str, data: dict[str, Any]
+) -> None:
     cfg = _get_config(category)
     required_fields = cfg.get("required_fields", set())
-    allowed_fields = set(required_fields) | {"description", "display_name", "display_name_en", "display_name_zh"}
+    allowed_fields = set(required_fields) | {
+        "description",
+        "display_name",
+        "display_name_en",
+        "display_name_zh",
+    }
     _validate_known_fields(data, allowed_fields, f"{category}:{key}")
     _validate_required_fields(data, required_fields, f"{category}:{key}")
 
@@ -238,119 +335,177 @@ def _validate_product_payload(category: str, key: str, data: dict[str, Any]) -> 
         if field in data:
             _require_number(data[field], f"{category}:{field}", minimum=0)
 
-    if category == "pv_panels":
-        _require_number(data["efficiency_pct"], "pv_panels:efficiency_pct", minimum=0)
-    elif category == "battery_packs":
-        dod = _require_number(data["depth_of_discharge_pct"], "battery_packs:depth_of_discharge_pct", minimum=0)
-        if dod > 100:
-            raise ValueError("battery_packs:depth_of_discharge_pct must be <= 100.")
-    elif category == "inverters":
-        if not isinstance(data["voltage_levels"], list) or not data["voltage_levels"]:
-            raise ValueError("inverters:voltage_levels must be a non-empty list.")
-        for item in data["voltage_levels"]:
-            _require_string(item, "inverters:voltage_levels")
-    elif category == "standard_packages":
-        _require_string(data["load_type"], "standard_packages:load_type")
+    validator = PRODUCT_PAYLOAD_VALIDATORS.get(category)
+    if validator:
+        validator(data)
+
+
+def _validate_bounded_number(
+    payload: dict[str, Any], key: str, field: str, maximum: float
+) -> None:
+    value = _require_number(payload.get(field), f"{key}.{field}", minimum=0)
+    if value > maximum:
+        raise ValueError(f"{key}.{field} must be <= {maximum:g}.")
+
+
+def _validate_number_fields(
+    payload: dict[str, Any],
+    key: str,
+    fields: Iterable[str],
+    *,
+    minimum: float | None = 0,
+) -> None:
+    for field in fields:
+        _require_number(payload.get(field), f"{key}.{field}", minimum=minimum)
+
+
+def _validate_simulation_defaults(value: Any, key: str) -> None:
+    payload = _require_mapping(value, key)
+    _validate_known_fields(payload, SIMULATION_DEFAULT_FIELDS, key)
+    _validate_bounded_number(payload, key, "system_efficiency", 1)
+    _require_number(
+        payload.get("default_year"), f"{key}.default_year", minimum=1900
+    )
+    _require_string(
+        payload.get("default_load_type"), f"{key}.default_load_type"
+    )
+    dispatch_mode = _require_string(
+        payload.get("diesel_dispatch_mode"), f"{key}.diesel_dispatch_mode"
+    ).lower()
+    if dispatch_mode not in {"lf", "cc", "cd", "lp", "proxy", "uc"}:
+        raise ValueError(
+            f"{key}.diesel_dispatch_mode must be one of "
+            "lf, cc, cd, lp, proxy, uc."
+        )
+    _validate_number_fields(
+        payload,
+        key,
+        ("pv_generation_correction_factor", "converter_kw_per_pv_kw"),
+    )
+    _validate_bounded_number(payload, key, "cycle_charging_target_load_pu", 1)
+    _validate_bounded_number(payload, key, "cycle_charging_start_soc_pu", 1)
+
+
+def _validate_economic_defaults(value: Any, key: str) -> None:
+    payload = _require_mapping(value, key)
+    _validate_known_fields(
+        payload, {field for field, _ in ECONOMIC_DEFAULT_NUMBER_FIELDS}, key
+    )
+    for field, minimum in ECONOMIC_DEFAULT_NUMBER_FIELDS:
+        _require_number(payload.get(field), f"{key}.{field}", minimum=minimum)
+
+
+def _validate_flat_number_mapping(
+    value: Any, key: str, fields: Iterable[str]
+) -> None:
+    payload = _require_mapping(value, key)
+    field_set = set(fields)
+    _validate_known_fields(payload, field_set, key)
+    _validate_number_fields(payload, key, field_set)
+
+
+def _validate_pricing(value: Any, key: str) -> None:
+    payload = _require_mapping(value, key)
+    _validate_known_fields(
+        payload, {"profit_margin", "pass_through_items"}, key
+    )
+    _require_number(
+        payload.get("profit_margin"), f"{key}.profit_margin", minimum=0
+    )
+    _require_string_list(
+        payload.get("pass_through_items", []), f"{key}.pass_through_items"
+    )
+
+
+def _validate_accessory_rate(
+    payload: dict[str, Any], key: str, nested_name: str
+) -> None:
+    nested_key = f"{key}.{nested_name}"
+    nested = _require_mapping(payload.get(nested_name), nested_key)
+    fields = {"base_usd", "per_bracket_set_usd"}
+    _validate_known_fields(nested, fields, nested_key)
+    _validate_number_fields(nested, nested_key, fields)
+
+
+def _validate_accessories(value: Any, key: str) -> None:
+    payload = _require_mapping(value, key)
+    allowed = {
+        "pv_mounting_cost_per_set_usd",
+        "intl_transport",
+        "installation",
+        "accessory_materials",
+        "other_initial_usd",
+        "battery_pallet",
+        "ems_addons",
+    }
+    _validate_known_fields(payload, allowed, key)
+    _require_number(
+        payload.get("pv_mounting_cost_per_set_usd"),
+        f"{key}.pv_mounting_cost_per_set_usd",
+        minimum=0,
+    )
+    for nested_name in (
+        "intl_transport",
+        "installation",
+        "accessory_materials",
+    ):
+        _validate_accessory_rate(payload, key, nested_name)
+    _require_number(
+        payload.get("other_initial_usd"), f"{key}.other_initial_usd", minimum=0
+    )
+    battery_key = f"{key}.battery_pallet"
+    battery_pallet = _require_mapping(
+        payload.get("battery_pallet"), battery_key
+    )
+    battery_fields = {"per_pack_usd", "reference_pack_kwh"}
+    _validate_known_fields(battery_pallet, battery_fields, battery_key)
+    _validate_number_fields(battery_pallet, battery_key, battery_fields)
+    ems_key = f"{key}.ems_addons"
+    ems_addons = _require_mapping(payload.get("ems_addons", {}), ems_key)
+    _validate_known_fields(ems_addons, {"prediction_control_usd"}, ems_key)
+    _require_number(
+        ems_addons.get("prediction_control_usd", 0),
+        f"{ems_key}.prediction_control_usd",
+        minimum=0,
+    )
+
+
+def _validate_voltage_default_map(value: Any, key: str) -> None:
+    payload = _require_mapping(value, key)
+    _validate_known_fields(
+        payload,
+        {"120V/240V", "120V/208V", "220V/380V", "230V/400V", "277V/480V"},
+        key,
+    )
+    for voltage_key, voltage_value in payload.items():
+        _require_string(voltage_value, f"{key}.{voltage_key}")
 
 
 def _validate_setting_value(key: str, value: Any) -> None:
-    if key == "pv_panels.default_model":
+    if key in STRING_SETTING_KEYS:
         _require_string(value, key)
-    elif key == "bracket_systems.default_model":
-        _require_string(value, key)
-    elif key == "battery_packs.default_model":
-        _require_string(value, key)
-    elif key == "bracket_systems.spacing_m":
-        _require_number(value, key, minimum=0)
-    elif key == "battery_packs.price_usd_per_kwh_fallback":
-        _require_number(value, key, minimum=0)
-    elif key == "diesel_generators.price_usd_per_kw":
+    elif key in NON_NEGATIVE_NUMBER_SETTING_KEYS:
         _require_number(value, key, minimum=0)
     elif key == "simulation_defaults":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(payload, {
-            "system_efficiency",
-            "default_year",
-            "default_load_type",
-            "diesel_dispatch_mode",
-            "pv_generation_correction_factor",
-            "converter_kw_per_pv_kw",
-            "cycle_charging_target_load_pu",
-            "cycle_charging_start_soc_pu",
-        }, key)
-        efficiency = _require_number(payload.get("system_efficiency"), f"{key}.system_efficiency", minimum=0)
-        if efficiency > 1:
-            raise ValueError(f"{key}.system_efficiency must be <= 1.")
-        _require_number(payload.get("default_year"), f"{key}.default_year", minimum=1900)
-        _require_string(payload.get("default_load_type"), f"{key}.default_load_type")
-        dispatch_mode = _require_string(payload.get("diesel_dispatch_mode"), f"{key}.diesel_dispatch_mode").lower()
-        if dispatch_mode not in {"lf", "cc", "cd", "lp", "proxy", "uc"}:
-            raise ValueError(f"{key}.diesel_dispatch_mode must be one of lf, cc, cd, lp, proxy, uc.")
-        _require_number(payload.get("pv_generation_correction_factor"), f"{key}.pv_generation_correction_factor", minimum=0)
-        _require_number(payload.get("converter_kw_per_pv_kw"), f"{key}.converter_kw_per_pv_kw", minimum=0)
-        target_load = _require_number(payload.get("cycle_charging_target_load_pu"), f"{key}.cycle_charging_target_load_pu", minimum=0)
-        if target_load > 1:
-            raise ValueError(f"{key}.cycle_charging_target_load_pu must be <= 1.")
-        start_soc = _require_number(payload.get("cycle_charging_start_soc_pu"), f"{key}.cycle_charging_start_soc_pu", minimum=0)
-        if start_soc > 1:
-            raise ValueError(f"{key}.cycle_charging_start_soc_pu must be <= 1.")
+        _validate_simulation_defaults(value, key)
     elif key == "economic_defaults":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(payload, {"diesel_price_usd_per_liter", "electricity_price_usd_per_kwh", "project_years", "nominal_discount_rate_pct", "inflation_rate_pct"}, key)
-        _require_number(payload.get("diesel_price_usd_per_liter"), f"{key}.diesel_price_usd_per_liter", minimum=0)
-        _require_number(payload.get("electricity_price_usd_per_kwh"), f"{key}.electricity_price_usd_per_kwh", minimum=0)
-        _require_number(payload.get("project_years"), f"{key}.project_years", minimum=1)
-        _require_number(payload.get("nominal_discount_rate_pct"), f"{key}.nominal_discount_rate_pct")
-        _require_number(payload.get("inflation_rate_pct"), f"{key}.inflation_rate_pct")
+        _validate_economic_defaults(value, key)
     elif key == "home_bg_defaults":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(payload, {"pv_kw", "annual_load_kwh", "diesel_kw", "diesel_price_usd", "battery_kwh", "storage_days"}, key)
-        for field in ("pv_kw", "annual_load_kwh", "diesel_kw", "diesel_price_usd", "battery_kwh", "storage_days"):
-            _require_number(payload.get(field), f"{key}.{field}", minimum=0)
+        _validate_flat_number_mapping(value, key, HOME_BG_NUMBER_FIELDS)
     elif key == "site_layout":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(payload, {"tray_length_m", "tray_width_m", "diesel_reserved_area_m2", "inverters_per_tray", "max_layout_area_m2"}, key)
-        _require_number(payload.get("tray_length_m"), f"{key}.tray_length_m", minimum=0)
-        _require_number(payload.get("tray_width_m"), f"{key}.tray_width_m", minimum=0)
-        _require_number(payload.get("diesel_reserved_area_m2"), f"{key}.diesel_reserved_area_m2", minimum=0)
-        _require_number(payload.get("inverters_per_tray"), f"{key}.inverters_per_tray", minimum=0)
-        _require_number(payload.get("max_layout_area_m2"), f"{key}.max_layout_area_m2", minimum=0)
+        _validate_flat_number_mapping(value, key, SITE_LAYOUT_NUMBER_FIELDS)
     elif key == "pricing":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(payload, {"profit_margin", "pass_through_items"}, key)
-        _require_number(payload.get("profit_margin"), f"{key}.profit_margin", minimum=0)
-        _require_string_list(payload.get("pass_through_items", []), f"{key}.pass_through_items")
+        _validate_pricing(value, key)
     elif key == "accessories":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(payload, {"pv_mounting_cost_per_set_usd", "intl_transport", "installation", "accessory_materials", "other_initial_usd", "battery_pallet", "ems_addons"}, key)
-        _require_number(payload.get("pv_mounting_cost_per_set_usd"), f"{key}.pv_mounting_cost_per_set_usd", minimum=0)
-        for nested_name in ("intl_transport", "installation", "accessory_materials"):
-            nested = _require_mapping(payload.get(nested_name), f"{key}.{nested_name}")
-            _validate_known_fields(nested, {"base_usd", "per_bracket_set_usd"}, f"{key}.{nested_name}")
-            _require_number(nested.get("base_usd"), f"{key}.{nested_name}.base_usd", minimum=0)
-            _require_number(nested.get("per_bracket_set_usd"), f"{key}.{nested_name}.per_bracket_set_usd", minimum=0)
-        _require_number(payload.get("other_initial_usd"), f"{key}.other_initial_usd", minimum=0)
-        battery_pallet = _require_mapping(payload.get("battery_pallet"), f"{key}.battery_pallet")
-        _validate_known_fields(battery_pallet, {"per_pack_usd", "reference_pack_kwh"}, f"{key}.battery_pallet")
-        _require_number(battery_pallet.get("per_pack_usd"), f"{key}.battery_pallet.per_pack_usd", minimum=0)
-        _require_number(battery_pallet.get("reference_pack_kwh"), f"{key}.battery_pallet.reference_pack_kwh", minimum=0)
-        ems_addons = _require_mapping(payload.get("ems_addons", {}), f"{key}.ems_addons")
-        _validate_known_fields(ems_addons, {"prediction_control_usd"}, f"{key}.ems_addons")
-        _require_number(ems_addons.get("prediction_control_usd", 0), f"{key}.ems_addons.prediction_control_usd", minimum=0)
+        _validate_accessories(value, key)
     elif key == "inverters.voltage_default_map":
-        payload = _require_mapping(value, key)
-        _validate_known_fields(
-            payload,
-            {"120V/240V", "120V/208V", "220V/380V", "230V/400V", "277V/480V"},
-            key,
-        )
-        for voltage_key, voltage_value in payload.items():
-            _require_string(voltage_value, f"{key}.{voltage_key}")
+        _validate_voltage_default_map(value, key)
     else:
         raise KeyError(key)
 
 
 def list_categories() -> list[str]:
+    """Return the list of known product category keys."""
     return list(CATEGORY_CONFIG.keys())
 
 
@@ -369,13 +524,25 @@ def _setting_source(key: str) -> tuple[str, str]:
 
 
 def list_settings() -> list[dict[str, str]]:
-    return (
-        [{"key": key, "scope": "meta"} for key in sorted(META_SETTING_KEYS)]
-        + [{"key": key, "scope": "blob"} for key in sorted(BLOB_SETTING_KEYS)]
-    )
+    """Return every editable setting's key and scope (meta or blob)."""
+    return [
+        {"key": key, "scope": "meta"} for key in sorted(META_SETTING_KEYS)
+    ] + [{"key": key, "scope": "blob"} for key in sorted(BLOB_SETTING_KEYS)]
 
 
 def get_setting(conn: Connection, key: str) -> Any | None:
+    """Return the current value of a setting, or None if unset.
+
+    Args:
+        conn: An open database connection.
+        key: The setting key (meta dotted-path or blob key).
+
+    Returns:
+        The setting value, or None if it has not been set.
+
+    Raises:
+        KeyError: If key is not a recognized setting.
+    """
     table, value_field = _setting_source(key)
     with conn.cursor() as cur:
         cur.execute(f"SELECT {value_field} FROM {table} WHERE key = %s", (key,))
@@ -384,6 +551,16 @@ def get_setting(conn: Connection, key: str) -> Any | None:
 
 
 def upsert_setting(conn: Connection, key: str, value: Any) -> None:
+    """Validate and persist a setting value.
+
+    Args:
+        conn: An open database connection.
+        key: The setting key (meta dotted-path or blob key).
+        value: The new value to store.
+
+    Raises:
+        KeyError: If key is not a recognized setting.
+    """
     _validate_setting_value(key, value)
     table, value_field = _setting_source(key)
     with conn.cursor() as cur:
@@ -400,29 +577,65 @@ def upsert_setting(conn: Connection, key: str, value: Any) -> None:
 
 
 def list_items(conn: Connection, category: str) -> list[dict[str, Any]]:
+    """List all items in a product category.
+
+    Args:
+        conn: An open database connection.
+        category: The product category key.
+
+    Returns:
+        A list of {"key": ..., "data": ...} entries.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     cfg = _get_config(category)
     table = cfg["table"]
     key_field = cfg["key_field"]
     payload_field = cfg.get("json_payload_field")
     with conn.cursor() as cur:
         if payload_field:
-            cur.execute(f"SELECT {key_field}, {payload_field} FROM {table} ORDER BY {key_field}")
+            cur.execute(
+                f"SELECT {key_field}, {payload_field} FROM {table} "
+                f"ORDER BY {key_field}"
+            )
             rows = cur.fetchall()
-            return [{"key": row[key_field], "data": row[payload_field]} for row in rows]
+            return [
+                {"key": row[key_field], "data": row[payload_field]}
+                for row in rows
+            ]
 
         cur.execute(f"SELECT * FROM {table} ORDER BY {key_field}")
         rows = cur.fetchall()
         return [{"key": row[key_field], "data": dict(row)} for row in rows]
 
 
-def get_item(conn: Connection, category: str, key: str) -> dict[str, Any] | None:
+def get_item(
+    conn: Connection, category: str, key: str
+) -> dict[str, Any] | None:
+    """Return one item's data, or None if it doesn't exist.
+
+    Args:
+        conn: An open database connection.
+        category: The product category key.
+        key: The item's key within the category.
+
+    Returns:
+        The item's data dict, or None if not found.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     cfg = _get_config(category)
     table = cfg["table"]
     key_field = cfg["key_field"]
     payload_field = cfg.get("json_payload_field")
     with conn.cursor() as cur:
         if payload_field:
-            cur.execute(f"SELECT {payload_field} FROM {table} WHERE {key_field} = %s", (key,))
+            cur.execute(
+                f"SELECT {payload_field} FROM {table} WHERE {key_field} = %s",
+                (key,),
+            )
             row = cur.fetchone()
             return row[payload_field] if row else None
 
@@ -431,7 +644,20 @@ def get_item(conn: Connection, category: str, key: str) -> dict[str, Any] | None
         return dict(row) if row else None
 
 
-def upsert_item(conn: Connection, category: str, key: str, data: dict[str, Any]) -> None:
+def upsert_item(
+    conn: Connection, category: str, key: str, data: dict[str, Any]
+) -> None:
+    """Validate and create or replace one item in a product category.
+
+    Args:
+        conn: An open database connection.
+        category: The product category key.
+        key: The item's key within the category.
+        data: The item's full data payload.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     cfg = _get_config(category)
     table = cfg["table"]
     key_field = cfg["key_field"]
@@ -455,8 +681,13 @@ def upsert_item(conn: Connection, category: str, key: str, data: dict[str, Any])
         payload = dict(data)
         payload[key_field] = key
         columns = list(payload.keys())
-        values = [Jsonb(payload[c]) if c in cfg["json_fields"] else payload[c] for c in columns]
-        assignments = ", ".join(f"{col} = EXCLUDED.{col}" for col in columns if col != key_field)
+        values = [
+            Jsonb(payload[c]) if c in cfg["json_fields"] else payload[c]
+            for c in columns
+        ]
+        assignments = ", ".join(
+            f"{col} = EXCLUDED.{col}" for col in columns if col != key_field
+        )
         column_sql = ", ".join(columns)
         placeholder_sql = ", ".join(["%s"] * len(columns))
         cur.execute(
@@ -472,6 +703,16 @@ def upsert_item(conn: Connection, category: str, key: str, data: dict[str, Any])
 
 
 def delete_item(conn: Connection, category: str, key: str) -> bool:
+    """Delete one item from a product category if it exists.
+
+    Args:
+        conn: An open database connection.
+        category: The product category key.
+        key: The item's key within the category.
+
+    Returns:
+        True if the item existed and was deleted, False otherwise.
+    """
     cfg = _get_config(category)
     table = cfg["table"]
     key_field = cfg["key_field"]

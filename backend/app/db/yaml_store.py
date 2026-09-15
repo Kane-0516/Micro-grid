@@ -1,4 +1,5 @@
 """YAML-backed product catalog storage used when PostgreSQL is unavailable."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -24,7 +25,9 @@ def _read_catalog() -> dict[str, Any]:
     with open(PRODUCTS_YAML, "r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle) or {}
     if not isinstance(data, dict):
-        raise ValueError(f"Product catalog YAML must contain an object: {PRODUCTS_YAML}")
+        raise ValueError(
+            f"Product catalog YAML must contain an object: {PRODUCTS_YAML}"
+        )
     return data
 
 
@@ -35,29 +38,39 @@ def _write_catalog(data: dict[str, Any]) -> None:
     if path.exists() and not backup.exists():
         backup.write_bytes(path.read_bytes())
     with open(temp_path, "w", encoding="utf-8", newline="\n") as handle:
-        yaml.safe_dump(data, handle, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        yaml.safe_dump(
+            data,
+            handle,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=False,
+        )
     temp_path.replace(path)
 
 
 def get_all_products() -> dict[str, Any]:
+    """Return the full product catalog as loaded from products.yaml."""
     with _CATALOG_LOCK:
         return deepcopy(_read_catalog())
 
 
 def list_categories() -> list[str]:
+    """Return the list of known product category keys."""
     return list(CATEGORY_CONFIG.keys())
 
 
 def list_settings() -> list[dict[str, str]]:
-    return (
-        [{"key": key, "scope": "meta"} for key in sorted(META_SETTING_KEYS)]
-        + [{"key": key, "scope": "blob"} for key in sorted(BLOB_SETTING_KEYS)]
-    )
+    """Return every editable setting's key and scope (meta or blob)."""
+    return [
+        {"key": key, "scope": "meta"} for key in sorted(META_SETTING_KEYS)
+    ] + [{"key": key, "scope": "blob"} for key in sorted(BLOB_SETTING_KEYS)]
 
 
 def _category_models(data: dict[str, Any], category: str) -> dict[str, Any]:
     if category == "standard_packages":
-        return data.setdefault("standard_products", {}).setdefault("packages", {})
+        return data.setdefault("standard_products", {}).setdefault(
+            "packages", {}
+        )
     return data.setdefault(category, {}).setdefault("models", {})
 
 
@@ -83,6 +96,17 @@ def _set_nested(data: dict[str, Any], dotted_key: str, value: Any) -> None:
 
 
 def get_setting(key: str) -> Any | None:
+    """Return the current value of a setting, or None if unset.
+
+    Args:
+        key: The setting key (meta dotted-path or blob key).
+
+    Returns:
+        The setting value, or None if it has not been set.
+
+    Raises:
+        KeyError: If key is not a recognized setting.
+    """
     if key not in META_SETTING_KEYS and key not in BLOB_SETTING_KEYS:
         raise KeyError(key)
     with _CATALOG_LOCK:
@@ -93,6 +117,15 @@ def get_setting(key: str) -> Any | None:
 
 
 def upsert_setting(key: str, value: Any) -> None:
+    """Validate and persist a setting value.
+
+    Args:
+        key: The setting key (meta dotted-path or blob key).
+        value: The new value to store.
+
+    Raises:
+        KeyError: If key is not a recognized setting.
+    """
     _validate_setting_value(key, value)
     with _CATALOG_LOCK:
         data = _read_catalog()
@@ -106,6 +139,17 @@ def upsert_setting(key: str, value: Any) -> None:
 
 
 def list_items(category: str) -> list[dict[str, Any]]:
+    """List all items in a product category.
+
+    Args:
+        category: The product category key.
+
+    Returns:
+        A list of {"key": ..., "data": ...} entries.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     cfg = CATEGORY_CONFIG.get(category)
     if cfg is None:
         raise KeyError(category)
@@ -114,7 +158,11 @@ def list_items(category: str) -> list[dict[str, Any]]:
         key_field = cfg["key_field"]
         items = []
         for key, payload in sorted(_category_models(data, category).items()):
-            item_data = deepcopy(payload) if isinstance(payload, dict) else {"value": payload}
+            item_data = (
+                deepcopy(payload)
+                if isinstance(payload, dict)
+                else {"value": payload}
+            )
             if category != "standard_packages":
                 item_data.setdefault(key_field, key)
             items.append({"key": key, "data": item_data})
@@ -122,6 +170,18 @@ def list_items(category: str) -> list[dict[str, Any]]:
 
 
 def get_item(category: str, key: str) -> dict[str, Any] | None:
+    """Return one item's data, or None if it doesn't exist.
+
+    Args:
+        category: The product category key.
+        key: The item's key within the category.
+
+    Returns:
+        The item's data dict, or None if not found.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     cfg = CATEGORY_CONFIG.get(category)
     if cfg is None:
         raise KeyError(category)
@@ -130,13 +190,27 @@ def get_item(category: str, key: str) -> dict[str, Any] | None:
         payload = _category_models(data, category).get(key)
         if payload is None:
             return None
-        item_data = deepcopy(payload) if isinstance(payload, dict) else {"value": payload}
+        item_data = (
+            deepcopy(payload)
+            if isinstance(payload, dict)
+            else {"value": payload}
+        )
         if category != "standard_packages":
             item_data.setdefault(cfg["key_field"], key)
         return item_data
 
 
 def upsert_item(category: str, key: str, item_data: dict[str, Any]) -> None:
+    """Validate and create or replace one item in a product category.
+
+    Args:
+        category: The product category key.
+        key: The item's key within the category.
+        item_data: The item's full data payload.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     cfg = CATEGORY_CONFIG.get(category)
     if cfg is None:
         raise KeyError(category)
@@ -150,6 +224,18 @@ def upsert_item(category: str, key: str, item_data: dict[str, Any]) -> None:
 
 
 def delete_item(category: str, key: str) -> bool:
+    """Delete one item from a product category if it exists.
+
+    Args:
+        category: The product category key.
+        key: The item's key within the category.
+
+    Returns:
+        True if the item existed and was deleted, False otherwise.
+
+    Raises:
+        KeyError: If category is not recognized.
+    """
     if category not in CATEGORY_CONFIG:
         raise KeyError(category)
     with _CATALOG_LOCK:

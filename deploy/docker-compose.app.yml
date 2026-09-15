@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-microgrid_products}
       POSTGRES_USER: ${POSTGRES_USER:-microgrid}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-microgrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
     volumes:
       - microgrid-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -27,7 +27,7 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 6001
       DEBUG: "false"
-      DATABASE_URL: ${DATABASE_URL:-postgresql://microgrid:microgrid@postgres:5432/microgrid_products}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in deploy/.env}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081,http://127.0.0.1:8081}
       GEOCODER_DEFAULT_REGION: ${GEOCODER_DEFAULT_REGION:-us}
       GEOCODER_API_URL: ${GEOCODER_API_URL:-http://host.docker.internal:4000/v1/search}
@@ -41,7 +41,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
-      INTERNAL_REPORT_EMAIL_DOMAINS: ${INTERNAL_REPORT_EMAIL_DOMAINS:-example.com}
+      INTERNAL_REPORT_EMAIL_DOMAINS: ${INTERNAL_REPORT_EMAIL_DOMAINS:-voltageenergy.com}
       INTERNAL_REPORT_EMAILS: ${INTERNAL_REPORT_EMAILS:-}
     volumes:
       - ${REPORT_TEMPLATE_DIR:-/opt/docker/pre-sale/report_templates}:/backend/.private/report_templates:ro

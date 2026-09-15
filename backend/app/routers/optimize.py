@@ -1,6 +1,5 @@
-﻿"""
-Router for POST /api/optimize.
-"""
+"""Router for POST /api/optimize."""
+
 from __future__ import annotations
 
 import sys
@@ -52,7 +51,8 @@ def optimize_microgrid(req: OptimizeRequest):
         if not results:
             return {
                 "success": False,
-                "error": "No feasible options satisfied the load, site, and diesel constraints.",
+                "error": "No feasible options satisfied the load, site, and "
+                "diesel constraints.",
                 "diagnostics": diagnostics,
             }
 
@@ -70,8 +70,8 @@ def optimize_microgrid(req: OptimizeRequest):
                     "dieselKw": o.diesel_kw,
                     "solarFractionPct": o.solar_fraction_pct,
                     "lossOfLoadPct": o.loss_of_load_pct,
-                    'isReliabilityRisk': o.is_reliability_risk,
-                    'reliabilityNote': o.reliability_note,
+                    "isReliabilityRisk": o.is_reliability_risk,
+                    "reliabilityNote": o.reliability_note,
                     "curtailmentPct": o.curtailment_pct,
                     "annualDieselLiters": o.annual_diesel_liters,
                     "annualDieselOnlyLiters": o.annual_diesel_only_liters,
@@ -99,4 +99,8 @@ def optimize_microgrid(req: OptimizeRequest):
             ],
         }
     except Exception as exc:
-        return {"success": False, "error": str(exc), "traceback": traceback.format_exc()}
+        return {
+            "success": False,
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+        }

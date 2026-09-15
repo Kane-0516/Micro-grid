@@ -4,9 +4,9 @@ services:
     container_name: microgrid-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: microgrid_products
-      POSTGRES_USER: microgrid
-      POSTGRES_PASSWORD: microgrid
+      POSTGRES_DB: ${POSTGRES_DB:-microgrid_products}
+      POSTGRES_USER: ${POSTGRES_USER:-microgrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "5432:5432"
     volumes:
@@ -31,7 +31,7 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 6001
       DEBUG: "false"
-      DATABASE_URL: postgresql://microgrid:microgrid@postgres:5432/microgrid_products
+      DATABASE_URL: postgresql://${POSTGRES_USER:-microgrid}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-microgrid_products}
       GEOCODER_DEFAULT_REGION: us
       GEOCODER_API_URL: http://host.docker.internal:14000/v1/search
       GEOCODER_REVERSE_API_URL: http://host.docker.internal:14000/v1/reverse

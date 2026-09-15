@@ -50,6 +50,219 @@ function serializeSlots(slots: TimeSlot[]): DailyLoadSlot[] {
   return slots.map(({ label, hours, loadKw }) => ({ label, hours, loadKw }));
 }
 
+type Translator = (key: string) => string;
+
+const MODE_TABS = [
+  { key: 'annual' as LoadInputMode, labelKey: 'load.mode.annual.label', hintKey: 'load.mode.annual.hint' },
+  { key: 'hourly' as LoadInputMode, labelKey: 'load.mode.hourly.label', hintKey: 'load.mode.hourly.hint' },
+  { key: 'import' as LoadInputMode, labelKey: 'load.mode.import.label', hintKey: 'load.mode.import.hint' },
+];
+
+function ModeTabs({ mode, t, onChange }: { mode: LoadInputMode; t: Translator; onChange: (mode: LoadInputMode) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: '0', borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+      {MODE_TABS.map((tab, idx) => {
+        const selected = mode === tab.key;
+        return (
+          <button
+            key={tab.key}
+            onClick={() => onChange(tab.key)}
+            style={{
+              flex: 1, padding: '0.7rem 0.5rem',
+              background: selected ? '#1a365d' : 'white',
+              color: selected ? 'white' : '#4a5568',
+              border: 'none',
+              borderRight: idx < MODE_TABS.length - 1 ? '1px solid #e2e8f0' : 'none',
+              cursor: 'pointer', fontSize: '0.85rem',
+              fontWeight: selected ? 700 : 400,
+              transition: 'all 0.15s',
+            }}
+          >
+            <div>{t(tab.labelKey)}</div>
+            <div style={{ fontSize: '0.7rem', opacity: 0.75, marginTop: '0.15rem' }}>{t(tab.hintKey)}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function AnnualLoadMode({
+  inputVal, annualLoadKwh, peakLoadKw, lang, t, onInput,
+}: {
+  inputVal: string;
+  annualLoadKwh?: number;
+  peakLoadKw?: number;
+  lang: 'zh' | 'en';
+  t: Translator;
+  onInput: (value: string) => void;
+}) {
+  return (
+    <div>
+      <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem' }}>{t('load.annual_kwh_label')}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <input
+          type="text"
+          value={inputVal}
+          onChange={event => onInput(event.target.value)}
+          placeholder={t('load.placeholder')}
+          style={{ flex: 1, padding: '0.65rem 1rem', border: '1px solid #cbd5e0', borderRadius: '8px', fontSize: '1rem', maxWidth: '260px' }}
+        />
+        <span style={{ color: '#718096', fontSize: '0.9rem' }}>{t('load.annual_kwh_unit')}</span>
+      </div>
+      {Boolean(annualLoadKwh && annualLoadKwh > 0) && (
+        <div style={{ marginTop: '0.75rem', padding: '0.6rem 1rem', background: 'var(--theme-tone-bg)', border: '1px solid var(--theme-tone-border)', borderRadius: '6px', fontSize: '0.88rem', color: 'var(--theme-tone-text)' }}>
+          {t('load.daily_avg')} <strong>{((annualLoadKwh ?? 0) / 365).toFixed(1)} kWh</strong>
+          {lang === 'en' ? ', ' : '，'}
+          {t('load.monthly_avg')} <strong>{Math.round((annualLoadKwh ?? 0) / 12).toLocaleString()} kWh</strong>
+          {lang === 'en' ? ', ' : '，'}
+          {t('load.est_peak')} <strong>~{peakLoadKw?.toFixed(1) ?? '—'} kW</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HourlyLoadMode({
+  slots, slotAnnual, slotPeak, lang, t, onSlotChange,
+}: {
+  slots: TimeSlot[];
+  slotAnnual: number;
+  slotPeak: number;
+  lang: 'zh' | 'en';
+  t: Translator;
+  onSlotChange: (index: number, value: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ fontSize: '0.85rem', color: '#4a5568', lineHeight: 1.6 }}>{t('load.hourly_desc')}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {slots.map((slot, index) => (
+          <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', background: index % 2 === 0 ? '#f8f9fa' : 'white', borderRadius: '8px' }}>
+            <span style={{ flex: 1, fontSize: '0.88rem', color: '#4a5568', minWidth: '160px' }}>{t(`load.slot.${slot.label}`)}</span>
+            <span style={{ fontSize: '0.8rem', color: '#a0aec0', minWidth: '40px' }}>{slot.hours}h</span>
+            <input
+              type="number"
+              value={slot.input}
+              onChange={event => onSlotChange(index, event.target.value)}
+              placeholder="0"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              style={{ width: '90px', padding: '0.4rem 0.6rem', border: '1px solid #cbd5e0', borderRadius: '6px', fontSize: '0.95rem', textAlign: 'right' }}
+            />
+            <span style={{ fontSize: '0.82rem', color: '#718096' }}>kW</span>
+            <span style={{ fontSize: '0.78rem', color: '#a0aec0', minWidth: '90px', textAlign: 'right' }}>
+              = {(slot.loadKw * slot.hours).toFixed(1)} {t('load.kwh_per_day')}
+            </span>
+          </div>
+        ))}
+      </div>
+      {slotAnnual > 0 && (
+        <div style={{ padding: '0.75rem 1rem', background: 'var(--theme-tone-bg)', border: '1px solid var(--theme-tone-border)', borderRadius: '8px', fontSize: '0.88rem', color: 'var(--theme-tone-text)', lineHeight: 1.7 }}>
+          {t('load.slot.daily_avg')} <strong>{(slotAnnual / 365).toFixed(1)} kWh</strong>
+          {lang === 'en' ? ', ' : '，'}
+          {t('load.slot.annual')} <strong>{Math.round(slotAnnual).toLocaleString()} kWh</strong>
+          {lang === 'en' ? ', ' : '，'}
+          {t('load.slot.peak')} <strong>{slotPeak.toFixed(1)} kW</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ImportLoadMode({
+  csvLoaded, csvError, annualLoadKwh, peakLoadKw, lang, t, fileRef, onFile,
+}: {
+  csvLoaded: boolean;
+  csvError: string;
+  annualLoadKwh?: number;
+  peakLoadKw?: number;
+  lang: 'zh' | 'en';
+  t: Translator;
+  fileRef: React.RefObject<HTMLInputElement | null>;
+  onFile: (event: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ padding: '0.8rem 1rem', background: 'var(--theme-tone-bg)', borderLeft: '4px solid var(--theme-tone-accent)', borderRadius: '8px', fontSize: '0.84rem', color: 'var(--theme-tone-text)', lineHeight: 1.7 }}>
+        <strong>{t('load.csv_format')}</strong>{t('load.csv_format_desc')}
+      </div>
+      <div
+        style={{ border: '2px dashed #cbd5e0', borderRadius: '10px', padding: '2rem', textAlign: 'center', cursor: 'pointer', background: csvLoaded ? 'var(--theme-tone-bg)' : '#fafafa', transition: 'all 0.2s' }}
+        onClick={() => fileRef.current?.click()}
+      >
+        <input ref={fileRef} type="file" accept=".csv,.txt" onChange={onFile} style={{ display: 'none' }} />
+        {csvLoaded ? (
+          <>
+            <div style={{ fontSize: '1.5rem', color: 'var(--theme-tone-text)', marginBottom: '0.4rem' }}>{t('load.csv_imported')}</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--theme-tone-text)' }}>
+              {lang === 'en' ? 'Annual load ' : '年总用电量 '}<strong>{annualLoadKwh?.toLocaleString()} kWh</strong>
+              {lang === 'en' ? ', Peak ' : '，峰值 '}<strong>{peakLoadKw?.toFixed(1)} kW</strong>
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#718096', marginTop: '0.3rem' }}>{t('load.csv_reupload')}</div>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: '0.95rem', color: '#4a5568', marginBottom: '0.3rem' }}>{t('load.csv_click')}</div>
+            <div style={{ fontSize: '0.8rem', color: '#a0aec0' }}>{t('load.csv_drag')}</div>
+          </>
+        )}
+      </div>
+      {csvError && (
+        <div style={{ padding: '0.6rem 0.9rem', background: 'var(--theme-tone-danger-bg)', border: '1px solid var(--theme-tone-danger-border)', borderRadius: '6px', fontSize: '0.84rem', color: 'var(--theme-tone-danger-text)' }}>
+          {csvError}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface LoadTypeOption { value: LoadType; label: string; desc: string }
+
+function LoadTypeSelector({
+  options, loadType, t, onSelect,
+}: {
+  options: LoadTypeOption[];
+  loadType?: LoadType;
+  t: Translator;
+  onSelect: (loadType: LoadType) => void;
+}) {
+  return (
+    <div>
+      <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem', fontSize: '0.95rem' }}>
+        {t('load.type.label')}
+        <span style={{ fontWeight: 400, fontSize: '0.78rem', color: '#718096', marginLeft: '0.4rem' }}>{t('load.type.label_note')}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+        {options.map(option => {
+          const selected = loadType === option.value;
+          return (
+            <div
+              key={option.value}
+              onClick={() => onSelect(option.value)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                padding: '0.6rem 0.75rem',
+                border: `2px solid ${selected ? '#1a365d' : '#e2e8f0'}`,
+                borderRadius: '8px', cursor: 'pointer',
+                background: selected ? '#ebf4ff' : 'white',
+                transition: 'all 0.15s',
+              }}
+            >
+              <div style={{ width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${selected ? '#1a365d' : '#cbd5e0'}`, background: selected ? '#1a365d' : 'transparent' }} />
+              <div>
+                <div style={{ fontWeight: 600, color: '#2d3748', fontSize: '0.88rem' }}>{option.label}</div>
+                <div style={{ fontSize: '0.72rem', color: '#718096' }}>{option.desc}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Step5LoadInput({ annualLoadKwh, loadType, loadInputMode = 'annual', dailyLoadSlots, peakLoadKw, onUpdate }: Step5LoadInputProps) {
   const { lang, t } = useLang();
   const [mode,      setMode]      = useState<LoadInputMode>(loadInputMode);
@@ -90,7 +303,7 @@ export default function Step5LoadInput({ annualLoadKwh, loadType, loadInputMode 
     });
   }, [dailyLoadSlots]);
 
-  const LOAD_TYPES: { value: LoadType; label: string; desc: string; }[] = [
+  const loadTypes: LoadTypeOption[] = [
     { value: 'residential',       label: t('load.type.residential'),       desc: t('load.type.res.desc') },
     { value: 'commercial',        label: t('load.type.commercial'),        desc: t('load.type.comm.desc') },
     { value: 'industrial',        label: t('load.type.industrial'),        desc: t('load.type.ind.desc') },
@@ -105,19 +318,6 @@ export default function Step5LoadInput({ annualLoadKwh, loadType, loadInputMode 
     { value: 'apartment' as LoadType,        label: t('load.type.apartment'),        desc: t('load.type.apartment.desc') },
   ];
 
-  const EXAMPLES = [
-    { labelKey: 'load.ex.small_res',   descKey: 'load.ex.small_res.desc',   kwh: 5_000 },
-    { labelKey: 'load.ex.medium_res',  descKey: 'load.ex.medium_res.desc',  kwh: 18_000 },
-    { labelKey: 'load.ex.commercial',  descKey: 'load.ex.commercial.desc',  kwh: 50_000 },
-    { labelKey: 'load.ex.industrial',  descKey: 'load.ex.industrial.desc',  kwh: 131_400 },
-  ];
-
-  const MODE_TABS = [
-    { key: 'annual'  as LoadInputMode, labelKey: 'load.mode.annual.label',  hintKey: 'load.mode.annual.hint' },
-    { key: 'hourly'  as LoadInputMode, labelKey: 'load.mode.hourly.label',  hintKey: 'load.mode.hourly.hint' },
-    { key: 'import'  as LoadInputMode, labelKey: 'load.mode.import.label',  hintKey: 'load.mode.import.hint' },
-  ];
-
   const handleModeChange = (m: LoadInputMode) => { setMode(m); onUpdate({ loadInputMode: m }); };
 
   const handleKwhInput = (val: string) => {
@@ -128,12 +328,6 @@ export default function Step5LoadInput({ annualLoadKwh, loadType, loadInputMode 
       onUpdate({ annualLoadKwh: num, peakLoadKw: peak });
     }
   };
-  const handleExample = (kwh: number) => {
-    setInputVal(String(kwh));
-    const peak = Math.round(kwh / 365 / 8 * 10) / 10;
-    onUpdate({ annualLoadKwh: kwh, peakLoadKw: peak });
-  };
-
   const handleSlotChange = (idx: number, val: string) => {
     const parsed = parseNonNegativeNumber(val);
     const updated = slots.map((s, i) => i === idx ? { ...s, input: val, loadKw: parsed ?? 0 } : s);
@@ -182,177 +376,40 @@ export default function Step5LoadInput({ annualLoadKwh, loadType, loadInputMode 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-
-
-
-      {/* ── 模式切换 Tab */}
-      <div>
-        <div style={{ display: 'flex', gap: '0', borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-          {MODE_TABS.map((tab, idx) => (
-            <button
-              key={tab.key}
-              onClick={() => handleModeChange(tab.key)}
-              style={{
-                flex: 1, padding: '0.7rem 0.5rem',
-                background: mode === tab.key ? '#1a365d' : 'white',
-                color: mode === tab.key ? 'white' : '#4a5568',
-                border: 'none',
-                borderRight: idx < MODE_TABS.length - 1 ? '1px solid #e2e8f0' : 'none',
-                cursor: 'pointer', fontSize: '0.85rem',
-                fontWeight: mode === tab.key ? 700 : 400,
-                transition: 'all 0.15s',
-              }}
-            >
-              <div>{t(tab.labelKey)}</div>
-              <div style={{ fontSize: '0.7rem', opacity: 0.75, marginTop: '0.15rem' }}>{t(tab.hintKey)}</div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── 模式一：年总用电量 */}
+      <ModeTabs mode={mode} t={t} onChange={handleModeChange} />
       {mode === 'annual' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <div>
-            <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem' }}>
-              {t('load.annual_kwh_label')}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <input
-                type="text"
-                value={inputVal}
-                onChange={e => handleKwhInput(e.target.value)}
-                placeholder={t('load.placeholder')}
-                style={{ flex: 1, padding: '0.65rem 1rem', border: '1px solid #cbd5e0', borderRadius: '8px', fontSize: '1rem', maxWidth: '260px' }}
-              />
-              <span style={{ color: '#718096', fontSize: '0.9rem' }}>{t('load.annual_kwh_unit')}</span>
-            </div>
-            {annualLoadKwh && annualLoadKwh > 0 && (
-              <div style={{ marginTop: '0.75rem', padding: '0.6rem 1rem', background: 'var(--theme-tone-bg)', border: '1px solid var(--theme-tone-border)', borderRadius: '6px', fontSize: '0.88rem', color: 'var(--theme-tone-text)' }}>
-                {t('load.daily_avg')} <strong>{(annualLoadKwh / 365).toFixed(1)} kWh</strong>
-                {lang === 'en' ? ', ' : '，'}
-                {t('load.monthly_avg')} <strong>{Math.round(annualLoadKwh / 12).toLocaleString()} kWh</strong>
-                {lang === 'en' ? ', ' : '，'}
-                {t('load.est_peak')} <strong>~{peakLoadKw?.toFixed(1) ?? '—'} kW</strong>
-              </div>
-            )}
-          </div>
-        </div>
+        <AnnualLoadMode
+          inputVal={inputVal}
+          annualLoadKwh={annualLoadKwh}
+          peakLoadKw={peakLoadKw}
+          lang={lang}
+          t={t}
+          onInput={handleKwhInput}
+        />
       )}
-
-      {/* ── 模式二：时段电流 */}
       {mode === 'hourly' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ fontSize: '0.85rem', color: '#4a5568', lineHeight: 1.6 }}>
-            {t('load.hourly_desc')}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {slots.map((s, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', background: i % 2 === 0 ? '#f8f9fa' : 'white', borderRadius: '8px' }}>
-                <span style={{ flex: 1, fontSize: '0.88rem', color: '#4a5568', minWidth: '160px' }}>
-                  {t(`load.slot.${s.label}`)}
-                </span>
-                <span style={{ fontSize: '0.8rem', color: '#a0aec0', minWidth: '40px' }}>
-                  {s.hours}h
-                </span>
-                <input
-                  type="number"
-                  value={s.input}
-                  onChange={e => handleSlotChange(i, e.target.value)}
-                  placeholder="0"
-                  min={0} step="any" inputMode="decimal"
-                  style={{ width: '90px', padding: '0.4rem 0.6rem', border: '1px solid #cbd5e0', borderRadius: '6px', fontSize: '0.95rem', textAlign: 'right' }}
-                />
-                <span style={{ fontSize: '0.82rem', color: '#718096' }}>kW</span>
-                <span style={{ fontSize: '0.78rem', color: '#a0aec0', minWidth: '90px', textAlign: 'right' }}>
-                  = {(s.loadKw * s.hours).toFixed(1)} {t('load.kwh_per_day')}
-                </span>
-              </div>
-            ))}
-          </div>
-          {slotAnnual > 0 && (
-            <div style={{ padding: '0.75rem 1rem', background: 'var(--theme-tone-bg)', border: '1px solid var(--theme-tone-border)', borderRadius: '8px', fontSize: '0.88rem', color: 'var(--theme-tone-text)', lineHeight: 1.7 }}>
-              {t('load.slot.daily_avg')} <strong>{(slotAnnual / 365).toFixed(1)} kWh</strong>
-              {lang === 'en' ? ', ' : '，'}
-              {t('load.slot.annual')} <strong>{Math.round(slotAnnual).toLocaleString()} kWh</strong>
-              {lang === 'en' ? ', ' : '，'}
-              {t('load.slot.peak')} <strong>{slotPeak.toFixed(1)} kW</strong>
-            </div>
-          )}
-        </div>
+        <HourlyLoadMode
+          slots={slots}
+          slotAnnual={slotAnnual}
+          slotPeak={slotPeak}
+          lang={lang}
+          t={t}
+          onSlotChange={handleSlotChange}
+        />
       )}
-
-      {/* ── 模式三：导入用电表格 */}
       {mode === 'import' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ padding: '0.8rem 1rem', background: 'var(--theme-tone-bg)', borderLeft: '4px solid var(--theme-tone-accent)', borderRadius: '8px', fontSize: '0.84rem', color: 'var(--theme-tone-text)', lineHeight: 1.7 }}>
-            <strong>{t('load.csv_format')}</strong>{t('load.csv_format_desc')}
-          </div>
-
-          <div
-            style={{ border: '2px dashed #cbd5e0', borderRadius: '10px', padding: '2rem', textAlign: 'center', cursor: 'pointer', background: csvLoaded ? 'var(--theme-tone-bg)' : '#fafafa', transition: 'all 0.2s' }}
-            onClick={() => fileRef.current?.click()}
-          >
-            <input ref={fileRef} type="file" accept=".csv,.txt" onChange={handleFile} style={{ display: 'none' }} />
-            {csvLoaded ? (
-              <>
-                <div style={{ fontSize: '1.5rem', color: 'var(--theme-tone-text)', marginBottom: '0.4rem' }}>{t('load.csv_imported')}</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--theme-tone-text)' }}>
-                  {lang === 'en' ? 'Annual load ' : '年总用电量 '}
-                  <strong>{annualLoadKwh?.toLocaleString()} kWh</strong>
-                  {lang === 'en' ? ', Peak ' : '，峰值 '}
-                  <strong>{peakLoadKw?.toFixed(1)} kW</strong>
-                </div>
-                <div style={{ fontSize: '0.78rem', color: '#718096', marginTop: '0.3rem' }}>{t('load.csv_reupload')}</div>
-              </>
-            ) : (
-              <>
-                <div style={{ fontSize: '0.95rem', color: '#4a5568', marginBottom: '0.3rem' }}>{t('load.csv_click')}</div>
-                <div style={{ fontSize: '0.8rem', color: '#a0aec0' }}>{t('load.csv_drag')}</div>
-              </>
-            )}
-          </div>
-
-          {csvError && (
-            <div style={{ padding: '0.6rem 0.9rem', background: 'var(--theme-tone-danger-bg)', border: '1px solid var(--theme-tone-danger-border)', borderRadius: '6px', fontSize: '0.84rem', color: 'var(--theme-tone-danger-text)' }}>
-              {csvError}
-            </div>
-          )}
-        </div>
+        <ImportLoadMode
+          csvLoaded={csvLoaded}
+          csvError={csvError}
+          annualLoadKwh={annualLoadKwh}
+          peakLoadKw={peakLoadKw}
+          lang={lang}
+          t={t}
+          fileRef={fileRef}
+          onFile={handleFile}
+        />
       )}
-
-      {/* ── 负载类型 */}
-      <div>
-        <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem', fontSize: '0.95rem' }}>
-          {t('load.type.label')}
-          <span style={{ fontWeight: 400, fontSize: '0.78rem', color: '#718096', marginLeft: '0.4rem' }}>
-            {t('load.type.label_note')}
-          </span>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
-          {LOAD_TYPES.map(lt => (
-            <div
-              key={lt.value}
-              onClick={() => handleLoadType(lt.value)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '0.5rem',
-                padding: '0.6rem 0.75rem',
-                border: `2px solid ${loadType === lt.value ? '#1a365d' : '#e2e8f0'}`,
-                borderRadius: '8px', cursor: 'pointer',
-                background: loadType === lt.value ? '#ebf4ff' : 'white',
-                transition: 'all 0.15s',
-              }}
-            >
-              <div style={{ width: '14px', height: '14px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${loadType === lt.value ? '#1a365d' : '#cbd5e0'}`, background: loadType === lt.value ? '#1a365d' : 'transparent' }} />
-              <div>
-                <div style={{ fontWeight: 600, color: '#2d3748', fontSize: '0.88rem' }}>{lt.label}</div>
-                <div style={{ fontSize: '0.72rem', color: '#718096' }}>{lt.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
+      <LoadTypeSelector options={loadTypes} loadType={loadType} t={t} onSelect={handleLoadType} />
     </div>
   );
 }

@@ -1,14 +1,13 @@
-"""
-test_layout_boundary_preservation.py
-=====================================
-保持性属性测试：验证 `_rect_fits` 函数在非 bug 输入上的基线行为。
+"""保持性属性测试：验证 `_rect_fits` 函数在非 bug 输入上的基线行为.
 
 这些测试必须在未修复代码上 PASS，用于确认修复后不会引入回归。
 
 测试策略：
   1. 完全包含保持：生成完全在凸多边形内的矩形，验证 _rect_fits 返回 True
-  2. 角点在外保持：生成至少一个角点在多边形外的矩形，验证 _rect_fits 返回 False
-  3. 中点在外保持：生成所有角点在内但至少一个中点在外的矩形，验证 _rect_fits 返回 False
+  2. 角点在外保持：生成至少一个角点在多边形外的矩形，
+     验证 _rect_fits 返回 False
+  3. 中点在外保持：生成所有角点在内但至少一个中点在外的矩形，
+     验证 _rect_fits 返回 False
 
 **Validates: Requirements 3.1, 3.2, 3.3**
 """
@@ -17,8 +16,7 @@ import math
 import sys
 from pathlib import Path
 
-import pytest
-from hypothesis import given, settings, assume
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 # 确保 backend 根目录在 sys.path 中
@@ -26,62 +24,79 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.layout_optimizer import (
-    _rect_fits,
-    _rect_corners,
-    _rect_test_points,
-    _point_in_polygon,
+from app.services.layout_optimizer import (  # noqa: E402
     Point,
+    _point_in_polygon,
+    _rect_corners,
+    _rect_fits,
+    _rect_test_points,
 )
-
 
 # ── 辅助函数 ──────────────────────────────────────────────────
 
-def _make_large_regular_polygon(cx: float, cy: float, radius: float,
-                                 n_sides: int) -> list[Point]:
-    """
-    生成以 (cx, cy) 为中心、半径为 radius 的正 n 边形（凸多边形）。
-    顶点按逆时针排列。
+
+def _make_large_regular_polygon(
+    cx: float, cy: float, radius: float, n_sides: int
+) -> list[Point]:
+    """生成以 (cx, cy) 为中心、半径为 radius 的正 n 边形（凸多边形）.
+
+    顶点按逆时针排列.
     """
     pts = []
     for i in range(n_sides):
         angle = 2 * math.pi * i / n_sides
-        pts.append(Point(cx + radius * math.cos(angle),
-                         cy + radius * math.sin(angle)))
+        pts.append(
+            Point(cx + radius * math.cos(angle), cy + radius * math.sin(angle))
+        )
     return pts
 
 
 def _inscribed_radius(radius: float, n_sides: int) -> float:
-    """正 n 边形的内切圆半径（从中心到边的最短距离）"""
+    """正 n 边形的内切圆半径（从中心到边的最短距离）."""
     return radius * math.cos(math.pi / n_sides)
 
 
 # ── Hypothesis 策略 ──────────────────────────────────────────
 
 # 生成凸多边形参数的策略
-polygon_params = st.fixed_dictionaries({
-    "cx": st.floats(min_value=-50, max_value=50, allow_nan=False, allow_infinity=False),
-    "cy": st.floats(min_value=-50, max_value=50, allow_nan=False, allow_infinity=False),
-    "radius": st.floats(min_value=40, max_value=200, allow_nan=False, allow_infinity=False),
-    "n_sides": st.integers(min_value=4, max_value=12),
-})
+polygon_params = st.fixed_dictionaries(
+    {
+        "cx": st.floats(
+            min_value=-50, max_value=50, allow_nan=False, allow_infinity=False
+        ),
+        "cy": st.floats(
+            min_value=-50, max_value=50, allow_nan=False, allow_infinity=False
+        ),
+        "radius": st.floats(
+            min_value=40, max_value=200, allow_nan=False, allow_infinity=False
+        ),
+        "n_sides": st.integers(min_value=4, max_value=12),
+    }
+)
 
 # 矩形尺寸策略（模拟实际支架尺寸范围）
-rect_dims = st.fixed_dictionaries({
-    "length": st.floats(min_value=5.0, max_value=30.0, allow_nan=False, allow_infinity=False),
-    "width": st.floats(min_value=2.0, max_value=10.0, allow_nan=False, allow_infinity=False),
-})
+rect_dims = st.fixed_dictionaries(
+    {
+        "length": st.floats(
+            min_value=5.0, max_value=30.0, allow_nan=False, allow_infinity=False
+        ),
+        "width": st.floats(
+            min_value=2.0, max_value=10.0, allow_nan=False, allow_infinity=False
+        ),
+    }
+)
 
 # 矩形旋转角度
-rect_angle = st.floats(min_value=0, max_value=2 * math.pi,
-                       allow_nan=False, allow_infinity=False)
+rect_angle = st.floats(
+    min_value=0, max_value=2 * math.pi, allow_nan=False, allow_infinity=False
+)
 
 
 # ── 测试类 ────────────────────────────────────────────────────
 
+
 class TestFullyContainedPreservation:
-    """
-    完全包含保持：生成完全在凸多边形内的矩形，验证 _rect_fits 返回 True。
+    """完全包含保持：生成完全在凸多边形内的矩形，验证 _rect_fits 返回 True.
 
     策略：生成一个足够大的正多边形，然后在其内切圆内放置一个小矩形，
     确保矩形的所有点（包括角点、中点、中心）都在多边形内。
@@ -96,7 +111,7 @@ class TestFullyContainedPreservation:
     )
     @settings(max_examples=200, deadline=None)
     def test_fully_contained_rect_returns_true(self, poly_params, dims, angle):
-        """完全在凸多边形内的矩形，_rect_fits 应返回 True"""
+        """完全在凸多边形内的矩形，_rect_fits 应返回 True."""
         cx, cy = poly_params["cx"], poly_params["cy"]
         radius = poly_params["radius"]
         n_sides = poly_params["n_sides"]
@@ -135,8 +150,9 @@ class TestFullyContainedPreservation:
 
 
 class TestCornerOutsidePreservation:
-    """
-    角点在外保持：生成至少一个角点在多边形外的矩形，验证 _rect_fits 返回 False。
+    """角点在外保持：生成至少一个角点在多边形外的矩形.
+
+    验证 _rect_fits 返回 False.
 
     策略：生成一个凸多边形，然后将矩形中心放在多边形外部或边界附近，
     确保至少一个角点明确在多边形外部。通过将矩形中心放在
@@ -149,15 +165,21 @@ class TestCornerOutsidePreservation:
         poly_params=polygon_params,
         dims=rect_dims,
         angle=rect_angle,
-        overshoot=st.floats(min_value=0.1, max_value=1.0,
-                            allow_nan=False, allow_infinity=False),
-        direction_angle=st.floats(min_value=0, max_value=2 * math.pi,
-                                  allow_nan=False, allow_infinity=False),
+        overshoot=st.floats(
+            min_value=0.1, max_value=1.0, allow_nan=False, allow_infinity=False
+        ),
+        direction_angle=st.floats(
+            min_value=0,
+            max_value=2 * math.pi,
+            allow_nan=False,
+            allow_infinity=False,
+        ),
     )
     @settings(max_examples=200, deadline=None)
-    def test_corner_outside_rect_returns_false(self, poly_params, dims, angle,
-                                                overshoot, direction_angle):
-        """至少一个角点在多边形外的矩形，_rect_fits 应返回 False"""
+    def test_corner_outside_rect_returns_false(
+        self, poly_params, dims, angle, overshoot, direction_angle
+    ):
+        """至少一个角点在多边形外的矩形，_rect_fits 应返回 False."""
         cx, cy = poly_params["cx"], poly_params["cy"]
         radius = poly_params["radius"]
         n_sides = poly_params["n_sides"]
@@ -200,8 +222,8 @@ class TestCornerOutsidePreservation:
 
 
 class TestMidpointOutsidePreservation:
-    """
-    中点在外保持：生成所有角点在内但至少一个中点在外的矩形，
+    """中点在外保持：生成所有角点在内但至少一个中点在外的矩形.
+
     验证 _rect_fits 返回 False。
 
     策略：使用一个带有浅凹陷的多边形，矩形放置在凹陷附近，
@@ -213,17 +235,21 @@ class TestMidpointOutsidePreservation:
     """
 
     @given(
-        rect_width=st.floats(min_value=4.0, max_value=8.0,
-                             allow_nan=False, allow_infinity=False),
-        notch_depth=st.floats(min_value=0.3, max_value=1.5,
-                              allow_nan=False, allow_infinity=False),
-        notch_half_width=st.floats(min_value=3.0, max_value=6.0,
-                                   allow_nan=False, allow_infinity=False),
+        rect_width=st.floats(
+            min_value=4.0, max_value=8.0, allow_nan=False, allow_infinity=False
+        ),
+        notch_depth=st.floats(
+            min_value=0.3, max_value=1.5, allow_nan=False, allow_infinity=False
+        ),
+        notch_half_width=st.floats(
+            min_value=3.0, max_value=6.0, allow_nan=False, allow_infinity=False
+        ),
     )
     @settings(max_examples=200, deadline=None)
-    def test_midpoint_outside_rect_returns_false(self, rect_width,
-                                                  notch_depth, notch_half_width):
-        """所有角点在内但至少一个中点在外的矩形，_rect_fits 应返回 False"""
+    def test_midpoint_outside_rect_returns_false(
+        self, rect_width, notch_depth, notch_half_width
+    ):
+        """所有角点在内但至少一个中点在外的矩形，_rect_fits 应返回 False."""
         # 构造一个带有顶部浅凹陷的多边形
         # 矩形放置在凹陷正下方，使得顶边中点落入凹陷区域
         #
@@ -254,14 +280,14 @@ class TestMidpointOutsidePreservation:
 
         # 构造多边形（逆时针）
         polygon = [
-            Point(-15, -half_w - 5),          # 左下
-            Point(15, -half_w - 5),            # 右下
-            Point(15, top_y),                  # 右上
-            Point(notch_half_width, top_y),    # 凹陷右侧上方
+            Point(-15, -half_w - 5),  # 左下
+            Point(15, -half_w - 5),  # 右下
+            Point(15, top_y),  # 右上
+            Point(notch_half_width, top_y),  # 凹陷右侧上方
             Point(notch_half_width, notch_y),  # 凹陷右下角
-            Point(-notch_half_width, notch_y), # 凹陷左下角
-            Point(-notch_half_width, top_y),   # 凹陷左侧上方
-            Point(-15, top_y),                 # 左上
+            Point(-notch_half_width, notch_y),  # 凹陷左下角
+            Point(-notch_half_width, top_y),  # 凹陷左侧上方
+            Point(-15, top_y),  # 左上
         ]
 
         # 矩形放在 (0, 0)，长边沿 X 轴，无旋转

@@ -1,7 +1,4 @@
-"""
-layout_optimizer.py
-===================
-基于可用面积（或多边形顶点）计算最大可安装微电网支架套数。
+"""基于可用面积（或多边形顶点）计算最大可安装微电网支架套数.
 
 算法架构 — 混合朝向 MILP 精确求解：
   对每个候选角度 θ，同时枚举横放（θ）和竖放（θ+90°）的所有候选位置，
@@ -36,12 +33,16 @@ ANGLE_DEDUP_TOL_DEG = 1.0
 
 @dataclass
 class Point:
+    """A 2D point in local (meter) coordinates."""
+
     x: float
     y: float
 
 
 @dataclass
 class LayoutRect:
+    """One placed bracket rectangle."""
+
     center: Point
     corners: List[Point]
     angle_rad: float = 0.0
@@ -49,6 +50,8 @@ class LayoutRect:
 
 @dataclass
 class LayoutResult:
+    """Result of the bracket layout optimization."""
+
     max_systems: int
     layout: List[LayoutRect] = field(default_factory=list)
     strategy: str = ""
@@ -60,16 +63,19 @@ class LayoutResult:
 # ── 候选位置：带朝向标记 ─────────────────────────────────────
 @dataclass
 class Candidate:
-    cx: float          # 旋转坐标系下的中心 x
-    cy: float          # 旋转坐标系下的中心 y
-    half_lx: float     # 旋转坐标系下的半长（含间距缓冲时另算）
-    half_ly: float     # 旋转坐标系下的半宽
-    rect: LayoutRect   # 世界坐标系下的矩形
+    """A candidate rectangle position in the rotated search frame."""
+
+    cx: float  # 旋转坐标系下的中心 x
+    cy: float  # 旋转坐标系下的中心 y
+    half_lx: float  # 旋转坐标系下的半长（含间距缓冲时另算）
+    half_ly: float  # 旋转坐标系下的半宽
+    rect: LayoutRect  # 世界坐标系下的矩形
 
 
 # ═══════════════════════════════════════════════════════════════
 # 几何工具
 # ═══════════════════════════════════════════════════════════════
+
 
 def _signed_area(pts: List[Point]) -> float:
     a = 0.0
@@ -124,8 +130,9 @@ def _point_in_polygon(pt: Point, poly: List[Point]) -> bool:
     return inside
 
 
-def _rect_corners(cx: float, cy: float, angle: float,
-                  length: float, width: float) -> List[Point]:
+def _rect_corners(
+    cx: float, cy: float, angle: float, length: float, width: float
+) -> List[Point]:
     hl, hw = length / 2, width / 2
     offsets = [(-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)]
     corners = []
@@ -136,21 +143,19 @@ def _rect_corners(cx: float, cy: float, angle: float,
 
 
 def _rect_test_points(corners: List[Point]) -> List[Point]:
-    center = Point(sum(c.x for c in corners) / 4,
-                   sum(c.y for c in corners) / 4)
+    center = Point(sum(c.x for c in corners) / 4, sum(c.y for c in corners) / 4)
     mids = []
     for i in range(4):
         nx = corners[(i + 1) % 4]
-        mids.append(Point((corners[i].x + nx.x) / 2,
-                          (corners[i].y + nx.y) / 2))
+        mids.append(Point((corners[i].x + nx.x) / 2, (corners[i].y + nx.y) / 2))
     return corners + mids + [center]
 
 
 def _rect_fits(corners: List[Point], poly: List[Point]) -> bool:
-    """
-    判断矩形是否完全在多边形内。
+    """判断矩形是否完全在多边形内.
+
     先检查 9 个采样点是否都在多边形内（快速排除大部分不合格候选），
-    再检查矩形边是否与多边形边相交（防止边界从采样点之间穿过）。
+    再检查矩形边是否与多边形边相交（防止边界从采样点之间穿过）.
     """
     if not all(_point_in_polygon(p, poly) for p in _rect_test_points(corners)):
         return False
@@ -161,11 +166,11 @@ def _rect_fits(corners: List[Point], poly: List[Point]) -> bool:
 
 
 def _segments_intersect(p1: Point, p2: Point, p3: Point, p4: Point) -> bool:
+    """判断线段 (p1,p2) 和 (p3,p4) 是否正交穿越（crossing）.
+
+    使用叉积方向法，忽略共线重叠和端点接触——矩形边沿多边形边界走是合法的.
     """
-    判断线段 (p1,p2) 和 (p3,p4) 是否正交穿越（crossing）。
-    使用叉积方向法。
-    忽略共线重叠和端点接触——矩形边沿多边形边界走是合法的。
-    """
+
     def cross(o, a, b):
         return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
 
@@ -175,18 +180,21 @@ def _segments_intersect(p1: Point, p2: Point, p3: Point, p4: Point) -> bool:
     d4 = cross(p1, p2, p4)
 
     # 只检测正交穿越：两条线段互相跨越对方
-    if ((d1 > 1e-9 and d2 < -1e-9) or (d1 < -1e-9 and d2 > 1e-9)) and \
-       ((d3 > 1e-9 and d4 < -1e-9) or (d3 < -1e-9 and d4 > 1e-9)):
+    if ((d1 > 1e-9 and d2 < -1e-9) or (d1 < -1e-9 and d2 > 1e-9)) and (
+        (d3 > 1e-9 and d4 < -1e-9) or (d3 < -1e-9 and d4 > 1e-9)
+    ):
         return True
 
     # 共线重叠、端点接触等情况不算相交
     return False
 
 
-def _rect_edges_intersect_polygon(corners: List[Point], poly: List[Point]) -> bool:
-    """
-    检查矩形的任何边是否与多边形的任何边相交。
-    发现第一个相交即短路返回 True。
+def _rect_edges_intersect_polygon(
+    corners: List[Point], poly: List[Point]
+) -> bool:
+    """检查矩形的任何边是否与多边形的任何边相交.
+
+    发现第一个相交即短路返回 True.
     """
     n_poly = len(poly)
     for i in range(4):
@@ -204,9 +212,9 @@ def _rect_edges_intersect_polygon(corners: List[Point], poly: List[Point]) -> bo
 # 重叠检测（支持混合朝向）
 # ═══════════════════════════════════════════════════════════════
 
+
 def _candidates_overlap(a: Candidate, b: Candidate, spacing: float) -> bool:
-    """
-    判断两个候选矩形（可能不同朝向）是否重叠（含间距缓冲）。
+    """判断两个候选矩形（可能不同朝向）是否重叠（含间距缓冲）.
 
     因为所有候选都在同一个旋转坐标系下表示（横放用原始坐标，
     竖放交换了 half_lx/half_ly），直接用轴对齐矩形重叠检测。
@@ -218,9 +226,176 @@ def _candidates_overlap(a: Candidate, b: Candidate, spacing: float) -> bool:
     return dx < sep_x - 1e-6 and dy < sep_y - 1e-6
 
 
+def _axis_positions(start: float, stop: float, pitch: float):
+    value = start
+    while value <= stop + 1e-6:
+        yield value
+        value += pitch
+
+
+def _add_candidate(
+    candidates: List[Candidate],
+    seen: set[tuple[int, int, int]],
+    poly: List[Point],
+    x: float,
+    y: float,
+    orient: int,
+    angle: float,
+    world_angle: float,
+    rect_len: float,
+    rect_wid: float,
+    half_lx: float,
+    half_ly: float,
+) -> None:
+    key = (round(x * 10), round(y * 10), orient)
+    if key in seen:
+        return
+    seen.add(key)
+    center_world = _rotate(Point(x, y), angle)
+    corners = _rect_corners(
+        center_world.x, center_world.y, world_angle, rect_len, rect_wid
+    )
+    if not _rect_fits(corners, poly):
+        return
+    candidates.append(
+        Candidate(
+            cx=x,
+            cy=y,
+            half_lx=half_lx,
+            half_ly=half_ly,
+            rect=LayoutRect(
+                center=center_world, corners=corners, angle_rad=world_angle
+            ),
+        )
+    )
+
+
+def _fine_offsets(
+    rotated_poly: List[Point],
+    minimum: float,
+    half_size: float,
+    pitch: float,
+    large_area: bool,
+    coordinate: str,
+) -> list[float]:
+    offsets = (
+        [pitch * 0.5]
+        if large_area
+        else [pitch * ratio for ratio in (0.25, 0.5, 0.75)]
+    )
+    offsets.extend(
+        ((getattr(point, coordinate) - minimum - half_size) % pitch + pitch)
+        % pitch
+        for point in rotated_poly
+    )
+    return offsets
+
+
+def _enumerate_orientation_candidates(
+    *,
+    poly: List[Point],
+    rotated_poly: List[Point],
+    bounds: tuple[float, float, float, float],
+    angle: float,
+    rect_len: float,
+    rect_wid: float,
+    spacing: float,
+    orientation: tuple[float, float, int],
+    candidates: List[Candidate],
+    seen: set[tuple[int, int, int]],
+) -> None:
+    minx, maxx, miny, maxy = bounds
+    grid_lx, grid_ly, orient = orientation
+    pitch_x, pitch_y = grid_lx + spacing, grid_ly + spacing
+    half_lx, half_ly = grid_lx / 2, grid_ly / 2
+    world_angle = angle if orient == 0 else angle + math.pi / 2
+
+    for x in _axis_positions(minx + half_lx, maxx - half_lx, pitch_x):
+        for y in _axis_positions(miny + half_ly, maxy - half_ly, pitch_y):
+            _add_candidate(
+                candidates,
+                seen,
+                poly,
+                x,
+                y,
+                orient,
+                angle,
+                world_angle,
+                rect_len,
+                rect_wid,
+                half_lx,
+                half_ly,
+            )
+
+    large_area = (maxx - minx) * (maxy - miny) > 20000
+    fine_offsets_x = _fine_offsets(
+        rotated_poly, minx, half_lx, pitch_x, large_area, "x"
+    )
+    fine_offsets_y = _fine_offsets(
+        rotated_poly, miny, half_ly, pitch_y, large_area, "y"
+    )
+    for xo in fine_offsets_x:
+        for x in _axis_positions(minx + half_lx + xo, maxx - half_lx, pitch_x):
+            _enumerate_y_offsets(
+                candidates,
+                seen,
+                poly,
+                x,
+                fine_offsets_y,
+                miny,
+                maxy,
+                half_ly,
+                pitch_y,
+                orient,
+                angle,
+                world_angle,
+                rect_len,
+                rect_wid,
+                half_lx,
+            )
+
+
+def _enumerate_y_offsets(
+    candidates: List[Candidate],
+    seen: set[tuple[int, int, int]],
+    poly: List[Point],
+    x: float,
+    offsets: list[float],
+    miny: float,
+    maxy: float,
+    half_ly: float,
+    pitch_y: float,
+    orient: int,
+    angle: float,
+    world_angle: float,
+    rect_len: float,
+    rect_wid: float,
+    half_lx: float,
+) -> None:
+    for offset in offsets:
+        for y in _axis_positions(
+            miny + half_ly + offset, maxy - half_ly, pitch_y
+        ):
+            _add_candidate(
+                candidates,
+                seen,
+                poly,
+                x,
+                y,
+                orient,
+                angle,
+                world_angle,
+                rect_len,
+                rect_wid,
+                half_lx,
+                half_ly,
+            )
+
+
 # ═══════════════════════════════════════════════════════════════
 # 混合朝向候选枚举
 # ═══════════════════════════════════════════════════════════════
+
 
 def _enumerate_mixed_candidates(
     poly: List[Point],
@@ -229,96 +404,42 @@ def _enumerate_mixed_candidates(
     rect_wid: float,
     spacing: float,
 ) -> List[Candidate]:
-    """
-    在给定基准角度下，同时枚举横放和竖放的所有候选位置。
+    """在给定基准角度下，同时枚举横放和竖放的所有候选位置.
 
     横放：矩形尺寸 rect_len × rect_wid，角度 = angle
     竖放：矩形尺寸 rect_wid × rect_len，角度 = angle + 90°
-          等价于在旋转坐标系下交换 X/Y 尺寸
+    （等价于在旋转坐标系下交换 X/Y 尺寸）
 
     所有候选的 cx/cy 都在 angle 旋转坐标系下表示。
     """
     rotated_poly = [_rotate(p, -angle) for p in poly]
-    minx, maxx, miny, maxy = _bbox(rotated_poly)
+    bounds = _bbox(rotated_poly)
 
     candidates: List[Candidate] = []
     seen: set[tuple[int, int, int]] = set()  # (x*10, y*10, orientation)
 
     # 两种朝向的参数
     orientations = [
-        (rect_len, rect_wid, 0),   # 横放: grid 尺寸 = len × wid
+        (rect_len, rect_wid, 0),  # 横放: grid 尺寸 = len × wid
     ]
     if abs(rect_len - rect_wid) > 0.1:
         orientations.append(
             (rect_wid, rect_len, 1),  # 竖放: grid 尺寸 = wid × len
         )
 
-    for grid_lx, grid_ly, orient in orientations:
-        pitch_x = grid_lx + spacing
-        pitch_y = grid_ly + spacing
-        half_lx = grid_lx / 2
-        half_ly = grid_ly / 2
-
-        # 世界坐标系下的矩形角度
-        world_angle = angle if orient == 0 else angle + math.pi / 2
-
-        # 标准网格
-        x = minx + half_lx
-        while x <= maxx - half_lx + 1e-6:
-            y = miny + half_ly
-            while y <= maxy - half_ly + 1e-6:
-                key = (round(x * 10), round(y * 10), orient)
-                if key not in seen:
-                    seen.add(key)
-                    center_world = _rotate(Point(x, y), angle)
-                    corners = _rect_corners(center_world.x, center_world.y,
-                                            world_angle, rect_len, rect_wid)
-                    if _rect_fits(corners, poly):
-                        candidates.append(Candidate(
-                            cx=x, cy=y, half_lx=half_lx, half_ly=half_ly,
-                            rect=LayoutRect(center=center_world,
-                                            corners=corners,
-                                            angle_rad=world_angle)))
-                y += pitch_y
-            x += pitch_x
-
-        # 多偏移精细搜索 — 大面积时减少偏移数量
-        bbox_area = (maxx - minx) * (maxy - miny)
-        if bbox_area > 20000:
-            fine_offsets_x = [pitch_x * 0.5]
-            fine_offsets_y = [pitch_y * 0.5]
-        else:
-            fine_offsets_x = [pitch_x * 0.25, pitch_x * 0.5, pitch_x * 0.75]
-            fine_offsets_y = [pitch_y * 0.25, pitch_y * 0.5, pitch_y * 0.75]
-        for rp in rotated_poly:
-            xr = ((rp.x - minx - half_lx) % pitch_x + pitch_x) % pitch_x
-            yr = ((rp.y - miny - half_ly) % pitch_y + pitch_y) % pitch_y
-            fine_offsets_x.append(xr)
-            fine_offsets_y.append(yr)
-
-        for xo in fine_offsets_x:
-            x = minx + half_lx + xo
-            while x <= maxx - half_lx + 1e-6:
-                for yo in fine_offsets_y:
-                    y = miny + half_ly + yo
-                    while y <= maxy - half_ly + 1e-6:
-                        key = (round(x * 10), round(y * 10), orient)
-                        if key not in seen:
-                            seen.add(key)
-                            center_world = _rotate(Point(x, y), angle)
-                            corners = _rect_corners(
-                                center_world.x, center_world.y,
-                                world_angle, rect_len, rect_wid)
-                            if _rect_fits(corners, poly):
-                                candidates.append(Candidate(
-                                    cx=x, cy=y,
-                                    half_lx=half_lx, half_ly=half_ly,
-                                    rect=LayoutRect(
-                                        center=center_world,
-                                        corners=corners,
-                                        angle_rad=world_angle)))
-                        y += pitch_y
-                x += pitch_x
+    for orientation in orientations:
+        _enumerate_orientation_candidates(
+            poly=poly,
+            rotated_poly=rotated_poly,
+            bounds=bounds,
+            angle=angle,
+            rect_len=rect_len,
+            rect_wid=rect_wid,
+            spacing=spacing,
+            orientation=orientation,
+            candidates=candidates,
+            seen=seen,
+        )
 
     return candidates
 
@@ -327,18 +448,18 @@ def _enumerate_mixed_candidates(
 # MILP 求解（混合朝向）
 # ═══════════════════════════════════════════════════════════════
 
+
 def _solve_milp_mixed(
     candidates: List[Candidate],
     spacing: float,
     time_limit_s: float = 60.0,
 ) -> List[LayoutRect]:
-    """
-    混合朝向 MILP：从横放+竖放的所有候选中选出最多的不重叠矩形。
+    """混合朝向 MILP：从横放+竖放的所有候选中选出最多的不重叠矩形.
 
     建模：
-      max  Σ x_i
-      s.t. x_i + x_j ≤ 1   ∀ (i,j) 重叠（含跨朝向）
-           x_i ∈ {0, 1}
+        max  Σ x_i
+        s.t. x_i + x_j ≤ 1   ∀ (i,j) 重叠（含跨朝向）
+             x_i ∈ {0, 1}
 
     使用网格索引加速冲突对构建，避免 O(n²) 暴力比较。
     """
@@ -354,36 +475,21 @@ def _solve_milp_mixed(
     cell_size = max_half * 2 + spacing + 1.0  # 保证相邻单元内的候选才可能冲突
 
     from collections import defaultdict
+
     grid: dict[tuple[int, int], list[int]] = defaultdict(list)
     for i, c in enumerate(candidates):
         gx = int(c.cx / cell_size)
         gy = int(c.cy / cell_size)
         grid[(gx, gy)].append(i)
 
-    conflicts: list[tuple[int, int]] = []
-    seen_pairs: set[tuple[int, int]] = set()
-    for (gx, gy), indices in grid.items():
-        # 检查本单元内部 + 相邻 8 个单元
-        neighbors: list[int] = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                neighbors.extend(grid.get((gx + dx, gy + dy), []))
-        for i in indices:
-            for j in neighbors:
-                if i >= j:
-                    continue
-                pair = (i, j)
-                if pair in seen_pairs:
-                    continue
-                seen_pairs.add(pair)
-                if _candidates_overlap(candidates[i], candidates[j], spacing):
-                    conflicts.append(pair)
+    conflicts = _find_conflicts(candidates, spacing, grid)
 
     if not conflicts:
         return [c.rect for c in candidates]
 
     try:
         import highspy
+
         h = highspy.Highs()
         h.silent()
 
@@ -394,8 +500,7 @@ def _solve_milp_mixed(
         h.changeColsCost(list(range(n)), [-1.0] * n)
 
         for i_idx, j_idx in conflicts:
-            h.addRow(-highspy.kHighsInf, 1.0, 2,
-                     [i_idx, j_idx], [1.0, 1.0])
+            h.addRow(-highspy.kHighsInf, 1.0, 2, [i_idx, j_idx], [1.0, 1.0])
 
         h.setOptionValue("time_limit", time_limit_s)
         h.setOptionValue("mip_rel_gap", 0.0)
@@ -405,19 +510,63 @@ def _solve_milp_mixed(
         info = h.getInfoValue("primal_solution_status")
         if info[1] == 2:  # feasible
             sol = h.getSolution()
-            return [candidates[i].rect for i in range(n)
-                    if sol.col_value[i] > 0.5]
+            return [
+                candidates[i].rect for i in range(n) if sol.col_value[i] > 0.5
+            ]
         return []
 
     except Exception:
         return _greedy_mixed(candidates, spacing)
 
 
+def _neighbor_indices(
+    grid: dict[tuple[int, int], list[int]], gx: int, gy: int
+) -> list[int]:
+    neighbors: list[int] = []
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            neighbors.extend(grid.get((gx + dx, gy + dy), []))
+    return neighbors
+
+
+def _find_conflicts(
+    candidates: List[Candidate],
+    spacing: float,
+    grid: dict[tuple[int, int], list[int]],
+) -> list[tuple[int, int]]:
+    conflicts: list[tuple[int, int]] = []
+    seen_pairs: set[tuple[int, int]] = set()
+    for (gx, gy), indices in grid.items():
+        neighbors = _neighbor_indices(grid, gx, gy)
+        for i in indices:
+            for j in neighbors:
+                _record_conflict(
+                    candidates, spacing, i, j, seen_pairs, conflicts
+                )
+    return conflicts
+
+
+def _record_conflict(
+    candidates: List[Candidate],
+    spacing: float,
+    i: int,
+    j: int,
+    seen_pairs: set[tuple[int, int]],
+    conflicts: list[tuple[int, int]],
+) -> None:
+    pair = (i, j)
+    if i >= j or pair in seen_pairs:
+        return
+    seen_pairs.add(pair)
+    if _candidates_overlap(candidates[i], candidates[j], spacing):
+        conflicts.append(pair)
+
+
 def _greedy_mixed(
     candidates: List[Candidate],
     spacing: float,
 ) -> List[LayoutRect]:
-    """贪心回退。"""
+    """贪心回退."""
     selected_cands: List[Candidate] = []
     selected_rects: List[LayoutRect] = []
     for cand in candidates:
@@ -435,6 +584,7 @@ def _greedy_mixed(
 # ═══════════════════════════════════════════════════════════════
 # 角度扫描
 # ═══════════════════════════════════════════════════════════════
+
 
 def _normalize_angle(a: float) -> float:
     a = a % math.pi
@@ -461,10 +611,97 @@ def _candidate_angles(poly: List[Point]) -> List[float]:
     tol = math.radians(ANGLE_DEDUP_TOL_DEG)
     deduped = []
     for a in sorted(angles):
-        if not any(abs(a - e) < tol or abs(math.pi - abs(a - e)) < tol
-                   for e in deduped):
+        if not any(
+            abs(a - e) < tol or abs(math.pi - abs(a - e)) < tol for e in deduped
+        ):
             deduped.append(a)
     return deduped
+
+
+def _limit_angles_for_area(angles: List[float], area: float) -> List[float]:
+    if area > 20000:
+        return angles[:15]
+    if area > 5000:
+        return angles[:25]
+    return angles
+
+
+def _quick_angle_scores(
+    poly: List[Point],
+    angles: List[float],
+    spacing: float,
+    rect_len: float,
+    rect_wid: float,
+) -> list[tuple[float, int]]:
+    import concurrent.futures
+    import os
+
+    def greedy_score(angle: float) -> tuple[float, int]:
+        candidates = _enumerate_mixed_candidates(
+            poly, angle, rect_len, rect_wid, spacing
+        )
+        return angle, len(_greedy_mixed(candidates, spacing))
+
+    scores: list[tuple[float, int]] = []
+    workers = min(len(angles), max(1, os.cpu_count() or 4))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(greedy_score, angle) for angle in angles]
+        scores.extend(
+            future.result()
+            for future in concurrent.futures.as_completed(futures)
+        )
+    return sorted(scores, key=lambda item: item[1], reverse=True)
+
+
+def _best_coarse_layout(
+    poly: List[Point],
+    scores: list[tuple[float, int]],
+    spacing: float,
+    rect_len: float,
+    rect_wid: float,
+    top_n: int,
+    milp_limit: float,
+) -> tuple[List[LayoutRect], float]:
+    best_layout: List[LayoutRect] = []
+    best_angle = 0.0
+    for angle, greedy_count in scores[:top_n]:
+        if greedy_count == 0:
+            continue
+        candidates = _enumerate_mixed_candidates(
+            poly, angle, rect_len, rect_wid, spacing
+        )
+        if len(candidates) <= len(best_layout):
+            continue
+        result = _solve_milp_mixed(candidates, spacing, milp_limit)
+        if len(result) > len(best_layout):
+            best_layout, best_angle = result, angle
+    return best_layout, best_angle
+
+
+def _refine_layout(
+    poly: List[Point],
+    initial: List[LayoutRect],
+    best_angle: float,
+    spacing: float,
+    rect_len: float,
+    rect_wid: float,
+    milp_limit: float,
+) -> List[LayoutRect]:
+    best_layout = initial
+    fine_step = math.radians(ANGLE_FINE_STEP_DEG)
+    fine_window = math.radians(ANGLE_FINE_WINDOW_DEG)
+    angle = best_angle - fine_window
+    while angle <= best_angle + fine_window + 1e-9:
+        normalized = _normalize_angle(angle)
+        candidates = _enumerate_mixed_candidates(
+            poly, normalized, rect_len, rect_wid, spacing
+        )
+        if len(candidates) > len(best_layout):
+            result = _solve_milp_mixed(candidates, spacing, milp_limit)
+            if len(result) > len(best_layout):
+                best_layout = result
+        angle += fine_step
+    return best_layout
 
 
 def _search_best_for_polygon(
@@ -474,80 +711,32 @@ def _search_best_for_polygon(
     rect_wid: float,
     time_limit_s: float = 120.0,
 ) -> List[LayoutRect]:
-    """
-    混合朝向全局搜索：
+    """混合朝向全局搜索.
+
     1. 贪心预筛选所有角度（并行）
     2. Top-5 角度做 MILP 精确求解（混合朝向）
     3. 最优角度 ±1° 精扫
     """
-    import concurrent.futures
-    import os
-
-    angles = _candidate_angles(poly)
     area = _abs_area(poly)
-
-    if area > 20000:
-        max_angles = 15
-    elif area > 5000:
-        max_angles = 25
-    else:
-        max_angles = len(angles)
-    if len(angles) > max_angles:
-        angles = angles[:max_angles]
-
-    # ── 第一遍：贪心预筛选（并行） ──
-    def _greedy_score(angle: float) -> tuple[float, int]:
-        cands = _enumerate_mixed_candidates(
-            poly, angle, rect_len, rect_wid, spacing)
-        greedy = _greedy_mixed(cands, spacing)
-        return (angle, len(greedy))
-
-    n_workers = min(len(angles), max(1, os.cpu_count() or 4))
-    quick_scores: list[tuple[float, int]] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=n_workers) as pool:
-        futures = {pool.submit(_greedy_score, a): a for a in angles}
-        for fut in concurrent.futures.as_completed(futures):
-            quick_scores.append(fut.result())
-
-    quick_scores.sort(key=lambda t: t[1], reverse=True)
-
-    # ── 第二遍：top-3 做 MILP（大面积减少到 top-3） ──
-    best_layout: List[LayoutRect] = []
-    best_count = 0
-    best_angle = 0.0
-
+    angles = _limit_angles_for_area(_candidate_angles(poly), area)
+    quick_scores = _quick_angle_scores(
+        poly, angles, spacing, rect_len, rect_wid
+    )
     top_n = 3 if area > 10000 else 5
     milp_limit = max(3.0, time_limit_s * 0.4 / max(top_n, 1))
-
-    for angle, greedy_count in quick_scores[:top_n]:
-        if greedy_count == 0:
-            continue
-        cands = _enumerate_mixed_candidates(
-            poly, angle, rect_len, rect_wid, spacing)
-        if len(cands) <= best_count:
-            continue
-        result = _solve_milp_mixed(cands, spacing, milp_limit)
-        if len(result) > best_count:
-            best_count = len(result)
-            best_layout = result
-            best_angle = angle
-
-    # ── 第三遍：精扫（大面积跳过） ──
-    if best_count > 0 and area <= 15000:
-        fine_step = math.radians(ANGLE_FINE_STEP_DEG)
-        fine_window = math.radians(ANGLE_FINE_WINDOW_DEG)
-        a = best_angle - fine_window
-        while a <= best_angle + fine_window + 1e-9:
-            na = _normalize_angle(a)
-            cands = _enumerate_mixed_candidates(
-                poly, na, rect_len, rect_wid, spacing)
-            if len(cands) > best_count:
-                result = _solve_milp_mixed(cands, spacing, milp_limit)
-                if len(result) > best_count:
-                    best_count = len(result)
-                    best_layout = result
-            a += fine_step
-
+    best_layout, best_angle = _best_coarse_layout(
+        poly, quick_scores, spacing, rect_len, rect_wid, top_n, milp_limit
+    )
+    if best_layout and area <= 15000:
+        best_layout = _refine_layout(
+            poly,
+            best_layout,
+            best_angle,
+            spacing,
+            rect_len,
+            rect_wid,
+            milp_limit,
+        )
     return best_layout
 
 
@@ -555,59 +744,92 @@ def _search_best_for_polygon(
 # 凸分解
 # ═══════════════════════════════════════════════════════════════
 
-def _clip_half(poly: List[Point], vertical: bool, val: float,
-               keep_lower: bool) -> List[Point]:
+
+def _inside_half(
+    point: Point, vertical: bool, value: float, keep_lower: bool, eps: float
+) -> bool:
+    coordinate = point.x if vertical else point.y
+    return (
+        coordinate <= value + eps if keep_lower else coordinate >= value - eps
+    )
+
+
+def _half_intersection(
+    start: Point,
+    end: Point,
+    vertical: bool,
+    value: float,
+    eps: float,
+) -> Optional[Point]:
+    delta = (end.x - start.x) if vertical else (end.y - start.y)
+    if abs(delta) < eps:
+        return None
+    start_coordinate = start.x if vertical else start.y
+    ratio = (value - start_coordinate) / delta
+    if ratio < -eps or ratio > 1 + eps:
+        return None
+    if vertical:
+        return Point(value, start.y + ratio * (end.y - start.y))
+    return Point(start.x + ratio * (end.x - start.x), value)
+
+
+def _append_clipped_edge(
+    output: List[Point],
+    current: Point,
+    following: Point,
+    current_inside: bool,
+    following_inside: bool,
+    vertical: bool,
+    value: float,
+    eps: float,
+) -> None:
+    if current_inside and following_inside:
+        output.append(following)
+        return
+    intersection = _half_intersection(current, following, vertical, value, eps)
+    if current_inside and intersection:
+        output.append(intersection)
+    elif following_inside:
+        if intersection:
+            output.append(intersection)
+        output.append(following)
+
+
+def _dedupe_polygon(points: List[Point], eps: float) -> List[Point]:
+    deduped: List[Point] = []
+    for point in points:
+        if (
+            not deduped
+            or math.hypot(point.x - deduped[-1].x, point.y - deduped[-1].y)
+            > eps
+        ):
+            deduped.append(point)
+    if (
+        len(deduped) > 1
+        and math.hypot(
+            deduped[0].x - deduped[-1].x, deduped[0].y - deduped[-1].y
+        )
+        <= eps
+    ):
+        deduped.pop()
+    return deduped
+
+
+def _clip_half(
+    poly: List[Point], vertical: bool, val: float, keep_lower: bool
+) -> List[Point]:
     eps = 1e-6
-    out: List[Point] = []
-
-    def inside(p: Point) -> bool:
-        if vertical:
-            return p.x <= val + eps if keep_lower else p.x >= val - eps
-        return p.y <= val + eps if keep_lower else p.y >= val - eps
-
-    def intersect(a: Point, b: Point) -> Optional[Point]:
-        if vertical:
-            dx = b.x - a.x
-            if abs(dx) < eps:
-                return None
-            t = (val - a.x) / dx
-            if t < -eps or t > 1 + eps:
-                return None
-            return Point(val, a.y + t * (b.y - a.y))
-        dy = b.y - a.y
-        if abs(dy) < eps:
-            return None
-        t = (val - a.y) / dy
-        if t < -eps or t > 1 + eps:
-            return None
-        return Point(a.x + t * (b.x - a.x), val)
+    output: List[Point] = []
 
     n = len(poly)
     for i in range(n):
         c, nx = poly[i], poly[(i + 1) % n]
-        ci, ni = inside(c), inside(nx)
-        if ci and ni:
-            out.append(nx)
-        elif ci and not ni:
-            p = intersect(c, nx)
-            if p:
-                out.append(p)
-        elif not ci and ni:
-            p = intersect(c, nx)
-            if p:
-                out.append(p)
-            out.append(nx)
-
-    deduped: List[Point] = []
-    for p in out:
-        if not deduped or math.hypot(p.x - deduped[-1].x,
-                                     p.y - deduped[-1].y) > eps:
-            deduped.append(p)
-    if (len(deduped) > 1 and
-            math.hypot(deduped[0].x - deduped[-1].x,
-                       deduped[0].y - deduped[-1].y) <= eps):
-        deduped.pop()
-    return deduped
+        current_inside = _inside_half(c, vertical, val, keep_lower, eps)
+        following_inside = _inside_half(nx, vertical, val, keep_lower, eps)
+        _append_clipped_edge(
+            output, c, nx, current_inside, following_inside, vertical, val, eps
+        )
+    return _dedupe_polygon(output, eps)
 
 
 def _split_polygon(poly: List[Point], depth: int = 0) -> List[List[Point]]:
@@ -638,6 +860,7 @@ def _split_polygon(poly: List[Point], depth: int = 0) -> List[List[Point]]:
 # 主入口：多边形排布
 # ═══════════════════════════════════════════════════════════════
 
+
 def optimize_polygon_layout(
     polygon_points: List[Tuple[float, float]],
     spacing_m: float = _DEFAULT_BRACKET_SPACING_M,
@@ -645,8 +868,7 @@ def optimize_polygon_layout(
     bracket_width_m: float = _DEFAULT_BRACKET_WIDTH_M,
     time_limit_s: float = 120.0,
 ) -> LayoutResult:
-    """
-    给定多边形顶点，用混合朝向 MILP 精确求解最大可安装套数。
+    """给定多边形顶点，用混合朝向 MILP 精确求解最大可安装套数.
 
     每个候选位置可以选择横放或竖放，MILP 统一求解保证全局最优。
     """
@@ -658,7 +880,8 @@ def optimize_polygon_layout(
 
     # 策略 1：整体多边形
     layout1 = _search_best_for_polygon(
-        poly, spacing_m, bracket_length_m, bracket_width_m, half_time)
+        poly, spacing_m, bracket_length_m, bracket_width_m, half_time
+    )
     best = layout1
     strategy = "MILP mixed-orientation"
 
@@ -668,8 +891,11 @@ def optimize_polygon_layout(
         per_split = half_time / max(len(splits), 1)
         combined: List[LayoutRect] = []
         for sp in splits:
-            combined.extend(_search_best_for_polygon(
-                sp, spacing_m, bracket_length_m, bracket_width_m, per_split))
+            combined.extend(
+                _search_best_for_polygon(
+                    sp, spacing_m, bracket_length_m, bracket_width_m, per_split
+                )
+            )
         # 分割策略的结果需要对原始多边形做最终验证，
         # 因为子多边形的边界可能与原始多边形不完全一致
         combined = [r for r in combined if _rect_fits(r.corners, poly)]
@@ -694,12 +920,24 @@ def optimize_polygon_layout(
 # 主入口：纯面积估算
 # ═══════════════════════════════════════════════════════════════
 
+
 def max_systems_for_area(
     available_area_m2: float,
     spacing_m: float = _DEFAULT_BRACKET_SPACING_M,
     bracket_length_m: float = _DEFAULT_BRACKET_LENGTH_M,
     bracket_width_m: float = _DEFAULT_BRACKET_WIDTH_M,
 ) -> int:
+    """按纯面积（无边界形状）粗估最大可安装支架套数.
+
+    Args:
+        available_area_m2: 可用面积（m²）.
+        spacing_m: 相邻支架最小间距（m）.
+        bracket_length_m: 单套支架长度（m）.
+        bracket_width_m: 单套支架宽度（m）.
+
+    Returns:
+        估算的最大可安装套数.
+    """
     if available_area_m2 <= 0:
         return 0
     bl, bw, sp = bracket_length_m, bracket_width_m, spacing_m

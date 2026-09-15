@@ -19,9 +19,10 @@ env/
 *.log
 backend/app/logs/
 
-# Private report templates / internal assets (do not publish)
-backend/.private/
-backend/tmp_report_test.xlsx
+# Private report templates
+backend/.private/*
+!backend/.private/report_templates/
+!backend/.private/report_templates/*.xlsx
 
 # Local geocoder data
 .tools/
@@ -51,19 +52,15 @@ _deploy_staging2/
 deploy/*.tgz
 deploy/artifacts/
 deploy/presigned-urls.txt
+
+# Real deployment secrets (SMTP creds etc.) — keep only the .example templates
 deploy/.env
 
-# Local IDE / agent
-.kiro/
+# Sonar scan artifacts
+sonar-generic-issues.json
+pylint-report.txt
+.scannerwork/
 
-# Local internal notes (do not publish)
-项目实现逻辑.md
+# Report-generation smoke-test byproducts
+backend/tmp_report_test.xlsx
 
-# Local DB dumps / generated DBs at repo root
-/products.db
-/microgrid_products.dump
-/0
-/None
-
-
-backend/products.yaml.bak

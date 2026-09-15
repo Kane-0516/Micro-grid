@@ -12,46 +12,29 @@ import {
   updateProductAdminItem,
   updateProductAdminSetting,
 } from '@/api/client';
+import {
+  CatalogSettingsView,
+  ProductConfigHeader,
+  ProductRecordsView,
+  type FieldDef,
+  type SettingDef,
+  type StructuredSubField,
+} from './ProductConfigPageViews';
 import './ProductConfigPage.css';
 
 type AdminView = 'products' | 'settings';
 type FieldType = 'text' | 'number' | 'textarea' | 'json';
 type SortMode = 'name' | 'key';
 
-interface FieldDef {
-  key: string;
-  labelEn: string;
-  labelZh: string;
-  type: FieldType;
-  helpEn?: string;
-  helpZh?: string;
-}
-
-interface SettingDef {
-  key: ProductAdminSettingKey;
-  labelEn: string;
-  labelZh: string;
-  type: Exclude<FieldType, 'textarea'>;
-  groupEn: string;
-  groupZh: string;
-  helpEn?: string;
-  helpZh?: string;
-  advanced?: boolean;
-}
-
-interface StructuredSubField {
-  path: string;
-  labelEn: string;
-  labelZh: string;
-  type: 'text' | 'number' | 'string-list';
-  advanced?: boolean;
-}
-
 interface ProductCatalogExport {
   exportedAt: string;
   version: 1;
   products: Record<ProductAdminCategory, ProductAdminItem[]>;
   settings: Record<string, unknown>;
+}
+
+function localize(lang: 'en' | 'zh', en: string, zh: string): string {
+  return { en, zh }[lang];
 }
 
 const CATEGORY_ORDER: ProductAdminCategory[] = [
@@ -362,6 +345,34 @@ function isProductFieldRequired(field: FieldDef) {
   return field.key !== 'description';
 }
 
+function validateProductNumber(
+  lang: 'en' | 'zh',
+  category: ProductAdminCategory,
+  field: FieldDef,
+  label: string,
+  rawValue: string,
+): string | null {
+  if (field.type !== 'number') return null;
+  const numeric = Number(rawValue);
+  if (numeric < 0) return numberRangeMessage(lang, label, 0);
+  const isDepthOfDischarge = category === 'battery_packs' && field.key === 'depth_of_discharge_pct';
+  return isDepthOfDischarge && numeric > 100 ? numberRangeMessage(lang, label, 0, 100) : null;
+}
+
+function validateVoltageLevels(
+  lang: 'en' | 'zh',
+  category: ProductAdminCategory,
+  field: FieldDef,
+  rawValue: string,
+): string | null {
+  if (category !== 'inverters' || field.key !== 'voltage_levels') return null;
+  const parsed = rawValue.trim() ? JSON.parse(rawValue) : [];
+  if (Array.isArray(parsed) && parsed.length > 0) return null;
+  return lang === 'en'
+    ? 'Voltage Levels must be a non-empty JSON array.'
+    : '电压等级必须是非空 JSON 数组。';
+}
+
 function validateProductFieldValue(
   lang: 'en' | 'zh',
   category: ProductAdminCategory,
@@ -375,22 +386,8 @@ function validateProductFieldValue(
   if (!rawValue.trim()) return null;
   try {
     validateRawField(lang, label, field.type, rawValue);
-    if (field.type === 'number') {
-      const numeric = Number(rawValue);
-      if (numeric < 0) return numberRangeMessage(lang, label, 0);
-      if (category === 'battery_packs' && field.key === 'depth_of_discharge_pct' && numeric > 100) {
-        return numberRangeMessage(lang, label, 0, 100);
-      }
-    }
-    if (category === 'inverters' && field.key === 'voltage_levels') {
-      const parsed = rawValue.trim() ? JSON.parse(rawValue) : [];
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        return lang === 'en'
-          ? 'Voltage Levels must be a non-empty JSON array.'
-          : '电压等级必须是非空 JSON 数组。';
-      }
-    }
-    return null;
+    return validateProductNumber(lang, category, field, label, rawValue)
+      ?? validateVoltageLevels(lang, category, field, rawValue);
   } catch (error) {
     return error instanceof Error ? error.message : (lang === 'en' ? 'Invalid value.' : '输入值无效。');
   }
@@ -485,6 +482,61 @@ function setStructuredSettingValue(
   return { ...previous, [key]: JSON.stringify(nextObject, null, 2) };
 }
 
+function filterAndSortItems(items: ProductAdminItem[], searchTerm: string, sortMode: SortMode) {
+  const normalized = searchTerm.trim().toLowerCase();
+  const matchesSearch = (item: ProductAdminItem) =>
+    !normalized
+    || getCardTitle(item).toLowerCase().includes(normalized)
+    || item.key.toLowerCase().includes(normalized);
+  const compare = sortMode === 'key'
+    ? (left: ProductAdminItem, right: ProductAdminItem) => left.key.localeCompare(right.key)
+    : (left: ProductAdminItem, right: ProductAdminItem) => getCardTitle(left).localeCompare(getCardTitle(right));
+  return [...items].filter(matchesSearch).sort(compare);
+}
+
+function withFieldError(
+  previous: Record<string, string>,
+  key: string,
+  error: string | null,
+): Record<string, string> {
+  const next = { ...previous };
+  if (error) next[key] = error;
+  else delete next[key];
+  return next;
+}
+
+function validateAllSettings(
+  lang: 'en' | 'zh',
+  values: Record<ProductAdminSettingKey, string>,
+): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const def of SETTING_DEFS) {
+    const structuredFields = STRUCTURED_SETTING_FIELDS[def.key];
+    if (!structuredFields) {
+      const error = validateSettingFieldValue(lang, def, values[def.key] ?? '');
+      if (error) errors[def.key] = error;
+      continue;
+    }
+    for (const subField of structuredFields) {
+      const rawValue = getStructuredSettingValue(def.key, values[def.key] ?? '', subField.path);
+      const error = validateStructuredSettingValue(lang, subField, rawValue);
+      if (error) errors[`${def.key}.${subField.path}`] = error;
+    }
+  }
+  return errors;
+}
+
+async function importCatalogData(payload: ProductCatalogExport): Promise<void> {
+  for (const [key, value] of Object.entries(payload.settings)) {
+    await updateProductAdminSetting(key as ProductAdminSettingKey, value);
+  }
+  for (const category of CATEGORY_ORDER) {
+    for (const item of payload.products[category] ?? []) {
+      await createProductAdminItem(category, item);
+    }
+  }
+}
+
 export function ProductConfigPage() {
   const { lang } = useLang();
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -515,20 +567,10 @@ export function ProductConfigPage() {
   const categoryLabel = CATEGORY_LABELS[category][lang];
   const settingGroups = useMemo(() => groupSettingsBySection(lang), [lang]);
 
-  const filteredItems = useMemo(() => {
-    const normalized = searchTerm.trim().toLowerCase();
-    return [...items]
-      .filter((item) => {
-        if (!normalized) return true;
-        const title = getCardTitle(item).toLowerCase();
-        const key = item.key.toLowerCase();
-        return title.includes(normalized) || key.includes(normalized);
-      })
-      .sort((a, b) => {
-        if (sortMode === 'key') return a.key.localeCompare(b.key);
-        return getCardTitle(a).localeCompare(getCardTitle(b));
-      });
-  }, [items, searchTerm, sortMode]);
+  const filteredItems = useMemo(
+    () => filterAndSortItems(items, searchTerm, sortMode),
+    [items, searchTerm, sortMode],
+  );
 
   const loadItems = async (nextCategory: ProductAdminCategory, preferredKey?: string | null) => {
     setLoading(true);
@@ -638,23 +680,13 @@ export function ProductConfigPage() {
     setFormValues((prev) => ({ ...prev, [field.key]: rawValue }));
     if (formErrors[field.key]) {
       const nextError = validateProductFieldValue(lang, category, field, rawValue);
-      setFormErrors((prev) => {
-        const next = { ...prev };
-        if (nextError) next[field.key] = nextError;
-        else delete next[field.key];
-        return next;
-      });
+      setFormErrors((prev) => withFieldError(prev, field.key, nextError));
     }
   };
 
   const validateFormFieldOnBlur = (field: FieldDef) => {
     const nextError = validateProductFieldValue(lang, category, field, formValues[field.key] ?? '');
-    setFormErrors((prev) => {
-      const next = { ...prev };
-      if (nextError) next[field.key] = nextError;
-      else delete next[field.key];
-      return next;
-    });
+    setFormErrors((prev) => withFieldError(prev, field.key, nextError));
   };
 
   const buildPayload = (): Record<string, unknown> => {
@@ -671,14 +703,14 @@ export function ProductConfigPage() {
     }
     setFormErrors(nextErrors);
     if (Object.keys(nextErrors).length) {
-      throw new Error(lang === 'en' ? 'Please fix the highlighted product fields.' : '请先修正已高亮的产品字段。');
+      throw new Error(localize(lang, 'Please fix the highlighted product fields.', '请先修正已高亮的产品字段。'));
     }
     return payload;
   };
 
   const handleSave = async () => {
     if (!formKey.trim()) {
-      setError(lang === 'en' ? 'Please provide a key/model identifier first.' : '请先填写唯一标识。');
+      setError(localize(lang, 'Please provide a key/model identifier first.', '请先填写唯一标识。'));
       return;
     }
     setSaving(true);
@@ -693,7 +725,7 @@ export function ProductConfigPage() {
       }
       await loadItems(category, formKey.trim());
       setIsNew(false);
-      setNotice(lang === 'en' ? 'Saved successfully.' : '保存成功。');
+      setNotice(localize(lang, 'Saved successfully.', '保存成功。'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed.');
     } finally {
@@ -704,7 +736,7 @@ export function ProductConfigPage() {
   const handleDelete = async () => {
     if (isNew || !formKey.trim()) return;
     const confirmed = window.confirm(
-      lang === 'en' ? `Delete "${formKey}"?` : `确定删除“${formKey}”吗？`,
+      localize(lang, `Delete "${formKey}"?`, `确定删除“${formKey}”吗？`),
     );
     if (!confirmed) return;
     setSaving(true);
@@ -713,7 +745,7 @@ export function ProductConfigPage() {
     try {
       await deleteProductAdminItem(category, formKey.trim());
       await loadItems(category);
-      setNotice(lang === 'en' ? 'Deleted successfully.' : '删除成功。');
+      setNotice(localize(lang, 'Deleted successfully.', '删除成功。'));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed.');
     } finally {
@@ -727,23 +759,13 @@ export function ProductConfigPage() {
       const def = SETTING_DEFS.find((entry) => entry.key === key);
       if (!def) return;
       const nextError = validateSettingFieldValue(lang, def, rawValue);
-      setSettingsFieldErrors((prev) => {
-        const next = { ...prev };
-        if (nextError) next[key] = nextError;
-        else delete next[key];
-        return next;
-      });
+      setSettingsFieldErrors((prev) => withFieldError(prev, key, nextError));
     }
   };
 
   const validateSettingOnBlur = (def: SettingDef) => {
     const nextError = validateSettingFieldValue(lang, def, settingsValues[def.key] ?? '');
-    setSettingsFieldErrors((prev) => {
-      const next = { ...prev };
-      if (nextError) next[def.key] = nextError;
-      else delete next[def.key];
-      return next;
-    });
+    setSettingsFieldErrors((prev) => withFieldError(prev, def.key, nextError));
   };
 
   const updateStructuredField = (key: ProductAdminSettingKey, subField: StructuredSubField, rawValue: string) => {
@@ -751,12 +773,7 @@ export function ProductConfigPage() {
     const errorKey = `${key}.${subField.path}`;
     if (settingsFieldErrors[errorKey]) {
       const nextError = validateStructuredSettingValue(lang, subField, rawValue);
-      setSettingsFieldErrors((prev) => {
-        const next = { ...prev };
-        if (nextError) next[errorKey] = nextError;
-        else delete next[errorKey];
-        return next;
-      });
+      setSettingsFieldErrors((prev) => withFieldError(prev, errorKey, nextError));
     }
   };
 
@@ -764,12 +781,7 @@ export function ProductConfigPage() {
     const rawValue = getStructuredSettingValue(key, settingsValues[key] ?? '', subField.path);
     const errorKey = `${key}.${subField.path}`;
     const nextError = validateStructuredSettingValue(lang, subField, rawValue);
-    setSettingsFieldErrors((prev) => {
-      const next = { ...prev };
-      if (nextError) next[errorKey] = nextError;
-      else delete next[errorKey];
-      return next;
-    });
+    setSettingsFieldErrors((prev) => withFieldError(prev, errorKey, nextError));
   };
 
   const handleSaveSettings = async () => {
@@ -777,23 +789,10 @@ export function ProductConfigPage() {
     setSettingsError(null);
     setSettingsNotice(null);
     try {
-      const nextErrors: Record<string, string> = {};
-      for (const def of SETTING_DEFS) {
-        const structuredFields = STRUCTURED_SETTING_FIELDS[def.key];
-        if (structuredFields) {
-          for (const subField of structuredFields) {
-            const rawValue = getStructuredSettingValue(def.key, settingsValues[def.key] ?? '', subField.path);
-            const nextError = validateStructuredSettingValue(lang, subField, rawValue);
-            if (nextError) nextErrors[`${def.key}.${subField.path}`] = nextError;
-          }
-        } else {
-          const nextError = validateSettingFieldValue(lang, def, settingsValues[def.key] ?? '');
-          if (nextError) nextErrors[def.key] = nextError;
-        }
-      }
+      const nextErrors = validateAllSettings(lang, settingsValues);
       setSettingsFieldErrors(nextErrors);
       if (Object.keys(nextErrors).length) {
-        throw new Error(lang === 'en' ? 'Please fix the highlighted catalog settings.' : '请先修正已高亮的产品库设置。');
+        throw new Error(localize(lang, 'Please fix the highlighted catalog settings.', '请先修正已高亮的产品库设置。'));
       }
       await Promise.all(
         SETTING_DEFS.map((def) =>
@@ -801,7 +800,7 @@ export function ProductConfigPage() {
         ),
       );
       await loadSettings();
-      setSettingsNotice(lang === 'en' ? 'Catalog settings saved.' : '产品库设置已保存。');
+      setSettingsNotice(localize(lang, 'Catalog settings saved.', '产品库设置已保存。'));
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : 'Failed to save settings.');
     } finally {
@@ -834,7 +833,7 @@ export function ProductConfigPage() {
       anchor.download = `product-catalog-${payload.exportedAt.slice(0, 19).replace(/[:T]/g, '-')}.json`;
       anchor.click();
       URL.revokeObjectURL(url);
-      const message = lang === 'en' ? 'Catalog exported successfully.' : '产品库导出成功。';
+      const message = localize(lang, 'Catalog exported successfully.', '产品库导出成功。');
       if (view === 'products') setNotice(message);
       else setSettingsNotice(message);
     } catch (err) {
@@ -856,22 +855,13 @@ export function ProductConfigPage() {
       const raw = await file.text();
       const parsed = JSON.parse(raw) as ProductCatalogExport;
       if (!parsed || parsed.version !== 1 || !parsed.products || !parsed.settings) {
-        throw new Error(lang === 'en' ? 'Invalid catalog file format.' : '产品库文件格式无效。');
+        throw new Error(localize(lang, 'Invalid catalog file format.', '产品库文件格式无效。'));
       }
 
-      for (const [key, value] of Object.entries(parsed.settings)) {
-        await updateProductAdminSetting(key as ProductAdminSettingKey, value);
-      }
-
-      for (const category of CATEGORY_ORDER) {
-        const records = parsed.products[category] ?? [];
-        for (const item of records) {
-          await createProductAdminItem(category, item);
-        }
-      }
+      await importCatalogData(parsed);
 
       await Promise.all([loadItems(category, selectedKey), loadSettings()]);
-      const message = lang === 'en' ? 'Catalog imported successfully.' : '产品库导入成功。';
+      const message = localize(lang, 'Catalog imported successfully.', '产品库导入成功。');
       if (view === 'products') setNotice(message);
       else setSettingsNotice(message);
     } catch (err) {
@@ -888,285 +878,78 @@ export function ProductConfigPage() {
 
   return (
     <section className="product-config-page">
-      <div className="product-config-page__header">
-        <div>
-          <h1 className="product-config-page__title">
-            {lang === 'en' ? 'Product Configuration' : '产品配置'}
-          </h1>
-          <p className="product-config-page__subtitle">
-            {lang === 'en'
-              ? 'Maintain product records, bilingual names, package definitions, and shared catalog settings in one workspace.'
-              : '在同一个页面中维护产品记录、双语名称、标准套餐和共享产品库设置。'}
-          </p>
-        </div>
-        <div className="product-config-page__header-actions">
-          <input
-            ref={importInputRef}
-            className="product-config-page__hidden-file"
-            type="file"
-            accept="application/json,.json"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void handleImportCatalog(file);
-            }}
-          />
-          <button className="product-config-page__ghost-btn" type="button" onClick={handleExportCatalog} disabled={porting}>
-            {porting ? (lang === 'en' ? 'Working...' : '处理中...') : (lang === 'en' ? 'Export Catalog' : '导出产品库')}
-          </button>
-          <button className="product-config-page__ghost-btn" type="button" onClick={() => importInputRef.current?.click()} disabled={porting}>
-            {lang === 'en' ? 'Import Catalog' : '导入产品库'}
-          </button>
-          <button className={`product-config-page__view-tab${view === 'products' ? ' active' : ''}`} type="button" onClick={() => setView('products')}>
-            {lang === 'en' ? 'Product Records' : '产品条目'}
-          </button>
-          <button className={`product-config-page__view-tab${view === 'settings' ? ' active' : ''}`} type="button" onClick={() => setView('settings')}>
-            {lang === 'en' ? 'Catalog Settings' : '产品库设置'}
-          </button>
-        </div>
-      </div>
+      <input
+        ref={importInputRef}
+        className="product-config-page__hidden-file"
+        type="file"
+        accept="application/json,.json"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleImportCatalog(file);
+        }}
+      />
+      <ProductConfigHeader
+        lang={lang}
+        view={view}
+        porting={porting}
+        onExport={handleExportCatalog}
+        onImportClick={() => importInputRef.current?.click()}
+        onViewChange={setView}
+      />
 
       {view === 'products' ? (
-        <div className="product-config-page__layout">
-          <aside className="product-config-page__categories">
-            {CATEGORY_ORDER.map((entry) => (
-              <button
-                key={entry}
-                type="button"
-                className={`product-config-page__category-btn${entry === category ? ' active' : ''}`}
-                onClick={() => setCategory(entry)}
-              >
-                {CATEGORY_LABELS[entry][lang]}
-              </button>
-            ))}
-          </aside>
-
-          <section className="product-config-page__list">
-            <div className="product-config-page__panel-header">
-              <h2>{categoryLabel}</h2>
-              <span>{loading ? (lang === 'en' ? 'Loading...' : '加载中...') : `${filteredItems.length} ${lang === 'en' ? 'items' : '项'}`}</span>
-            </div>
-            <div className="product-config-page__toolbar product-config-page__toolbar--stack">
-              <div className="product-config-page__filter-row">
-                <input
-                  className="product-config-page__search"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder={lang === 'en' ? 'Search by name or key' : '按名称或 key 搜索'}
-                />
-                <select className="product-config-page__select" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
-                  <option value="name">{lang === 'en' ? 'Sort by name' : '按名称排序'}</option>
-                  <option value="key">{lang === 'en' ? 'Sort by key' : '按 key 排序'}</option>
-                </select>
-              </div>
-              <div className="product-config-page__action-row">
-                <button className="product-config-page__ghost-btn" type="button" onClick={() => void loadItems(category, selectedKey)}>
-                  {lang === 'en' ? 'Refresh' : '刷新'}
-                </button>
-                <button className="product-config-page__ghost-btn" type="button" onClick={duplicateCurrent} disabled={!selectedKey}>
-                  {lang === 'en' ? 'Duplicate' : '复制新增'}
-                </button>
-                <button className="product-config-page__primary-btn" type="button" onClick={startNew}>
-                  {lang === 'en' ? 'Add New' : '新增'}
-                </button>
-              </div>
-            </div>
-            <div className="product-config-page__cards">
-              {filteredItems.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={`product-config-page__item-card${selectedKey === item.key && !isNew ? ' active' : ''}`}
-                  onClick={() => openItem(item)}
-                >
-                  <div className="product-config-page__item-title">{getCardTitle(item)}</div>
-                  <div className="product-config-page__item-key">{item.key}</div>
-                </button>
-              ))}
-              {!filteredItems.length && !loading && (
-                <div className="product-config-page__empty">
-                  {searchTerm ? (lang === 'en' ? 'No matching items.' : '没有匹配的条目。') : (lang === 'en' ? 'No items in this category yet.' : '当前分类还没有条目。')}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="product-config-page__editor">
-            <div className="product-config-page__panel-header">
-              <h2>{isNew ? (lang === 'en' ? 'Create Item' : '新增条目') : (lang === 'en' ? 'Edit Item' : '编辑条目')}</h2>
-              {!isNew && selectedKey && <span>{selectedKey}</span>}
-            </div>
-
-            <label className="product-config-page__field">
-              <span>{lang === 'en' ? 'Key / Model ID' : '唯一标识 / 型号 ID'}</span>
-              <input
-                value={formKey}
-                onChange={(e) => setFormKey(e.target.value)}
-                placeholder={lang === 'en' ? 'e.g. 655W or small' : '例如 655W 或 small'}
-                disabled={!isNew}
-              />
-            </label>
-
-            <div className="product-config-page__form-grid">
-              {fields.map((field) => (
-                <label key={field.key} className={`product-config-page__field${field.type === 'textarea' || field.type === 'json' ? ' full' : ''}`}>
-                  <span>{lang === 'en' ? field.labelEn : field.labelZh}{isProductFieldRequired(field) ? <em className="product-config-page__required">*</em> : null}</span>
-                  {field.type === 'number' ? (
-                    <small className="product-config-page__field-help">
-                      {lang === 'en' ? 'Use a non-negative numeric value.' : '请输入大于或等于 0 的数值。'}
-                    </small>
-                  ) : field.type === 'json' ? (
-                    <small className="product-config-page__field-help">
-                      {lang === 'en' ? 'JSON format is required.' : '请输入有效的 JSON 格式。'}
-                    </small>
-                  ) : null}
-                  {field.type === 'textarea' || field.type === 'json' ? (
-                    <textarea
-                      className={formErrors[field.key] ? 'product-config-page__input-error' : ''}
-                      rows={field.type === 'json' ? 5 : 3}
-                      value={formValues[field.key] ?? ''}
-                      onChange={(e) => updateFormField(field, e.target.value)}
-                      onBlur={() => validateFormFieldOnBlur(field)}
-                    />
-                  ) : (
-                    <input
-                      className={formErrors[field.key] ? 'product-config-page__input-error' : ''}
-                      type={field.type === 'number' ? 'number' : 'text'}
-                      step={field.type === 'number' ? 'any' : undefined}
-                      value={formValues[field.key] ?? ''}
-                      onChange={(e) => updateFormField(field, e.target.value)}
-                      onBlur={() => validateFormFieldOnBlur(field)}
-                    />
-                  )}
-                  {formErrors[field.key] ? <small className="product-config-page__field-error">{formErrors[field.key]}</small> : null}
-                </label>
-              ))}
-            </div>
-
-            {error && <div className="product-config-page__alert error">{error}</div>}
-            {notice && <div className="product-config-page__alert success">{notice}</div>}
-
-            <div className="product-config-page__editor-actions">
-              <button className="product-config-page__ghost-btn" type="button" onClick={() => void loadItems(category, selectedKey)} disabled={saving}>
-                {lang === 'en' ? 'Reset' : '重置'}
-              </button>
-              {!isNew && (
-                <button className="product-config-page__danger-btn" type="button" onClick={handleDelete} disabled={saving || !formKey}>
-                  {lang === 'en' ? 'Delete' : '删除'}
-                </button>
-              )}
-              <button className="product-config-page__primary-btn" type="button" onClick={handleSave} disabled={saving}>
-                {saving ? (lang === 'en' ? 'Saving...' : '保存中...') : (lang === 'en' ? 'Save' : '保存')}
-              </button>
-            </div>
-          </section>
-        </div>
+        <ProductRecordsView
+          lang={lang}
+          categoryOrder={CATEGORY_ORDER}
+          categoryLabels={CATEGORY_LABELS}
+          category={category}
+          categoryLabel={categoryLabel}
+          filteredItems={filteredItems}
+          selectedKey={selectedKey}
+          isNew={isNew}
+          loading={loading}
+          searchTerm={searchTerm}
+          sortMode={sortMode}
+          fields={fields}
+          formKey={formKey}
+          formValues={formValues}
+          formErrors={formErrors}
+          error={error}
+          notice={notice}
+          saving={saving}
+          onCategoryChange={setCategory}
+          onSearchChange={setSearchTerm}
+          onSortChange={setSortMode}
+          onRefresh={() => void loadItems(category, selectedKey)}
+          onDuplicate={duplicateCurrent}
+          onStartNew={startNew}
+          onOpenItem={openItem}
+          onFormKeyChange={setFormKey}
+          onFieldChange={updateFormField}
+          onFieldBlur={validateFormFieldOnBlur}
+          onReset={() => void loadItems(category, selectedKey)}
+          onDelete={handleDelete}
+          onSave={handleSave}
+        />
       ) : (
-        <div className="product-config-page__settings-view">
-          <div className="product-config-page__settings-header">
-            <div>
-              <h2>{lang === 'en' ? 'Catalog Settings' : '产品库设置'}</h2>
-              <p>
-                {lang === 'en'
-                  ? 'These settings control default selections, layout rules, and shared pricing or simulation parameters.'
-                  : '这些设置用于控制默认选项、布局规则，以及共享的价格和仿真参数。'}
-              </p>
-            </div>
-            <div className="product-config-page__header-actions">
-              <button className="product-config-page__ghost-btn" type="button" onClick={() => void loadSettings()}>
-                {lang === 'en' ? 'Refresh Settings' : '刷新设置'}
-              </button>
-              <button className="product-config-page__primary-btn" type="button" onClick={handleSaveSettings} disabled={settingsSaving}>
-                {settingsSaving ? (lang === 'en' ? 'Saving...' : '保存中...') : (lang === 'en' ? 'Save Settings' : '保存设置')}
-              </button>
-            </div>
-          </div>
-
-          {settingsError && <div className="product-config-page__alert error">{settingsError}</div>}
-          {settingsNotice && <div className="product-config-page__alert success">{settingsNotice}</div>}
-
-          <div className="product-config-page__settings-grid">
-            {settingGroups.map(([groupName, defs]) => (
-              <section key={groupName} className="product-config-page__settings-card">
-                <div className="product-config-page__panel-header">
-                  <h2>{groupName}</h2>
-                  <span>{settingsLoading ? (lang === 'en' ? 'Loading...' : '加载中...') : `${defs.length} ${lang === 'en' ? 'fields' : '项'}`}</span>
-                </div>
-                <div className="product-config-page__form-grid product-config-page__form-grid--single">
-                  {defs.map((def) => {
-                    const structuredFields = STRUCTURED_SETTING_FIELDS[def.key];
-                    if (structuredFields) {
-                      return (
-                        <div key={def.key} className="product-config-page__field full">
-                          <span>{lang === 'en' ? def.labelEn : def.labelZh}<em className="product-config-page__required">*</em></span>
-                          {def.helpEn || def.helpZh ? (
-                            <small className="product-config-page__field-help">
-                              {lang === 'en' ? def.helpEn : def.helpZh}
-                            </small>
-                          ) : null}
-                          <div className="product-config-page__structured-grid">
-                            {structuredFields.map((subField) => (
-                              <label key={`${def.key}.${subField.path}`} className="product-config-page__field">
-                                <span>
-                                  {lang === 'en' ? subField.labelEn : subField.labelZh}
-                                  {subField.advanced ? <small> {lang === 'en' ? '(Advanced)' : '（高级）'}</small> : null}
-                                  <em className="product-config-page__required">*</em>
-                                </span>
-                                <input
-                                  className={settingsFieldErrors[`${def.key}.${subField.path}`] ? 'product-config-page__input-error' : ''}
-                                  type={subField.type === 'number' ? 'number' : 'text'}
-                                  step={subField.type === 'number' ? 'any' : undefined}
-                                  placeholder={subField.type === 'string-list' ? 'item_a, item_b' : undefined}
-                                  value={getStructuredSettingValue(def.key, settingsValues[def.key] ?? '', subField.path)}
-                                  onChange={(e) => updateStructuredField(def.key, subField, e.target.value)}
-                                  onBlur={() => validateStructuredFieldOnBlur(def.key, subField)}
-                                />
-                                {settingsFieldErrors[`${def.key}.${subField.path}`] ? <small className="product-config-page__field-error">{settingsFieldErrors[`${def.key}.${subField.path}`]}</small> : null}
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    return (
-                      <label key={def.key} className={`product-config-page__field${def.type === 'json' ? ' full' : ''}`}>
-                        <span>
-                          {lang === 'en' ? def.labelEn : def.labelZh}
-                          {def.advanced ? <small> {lang === 'en' ? '(Advanced)' : '（高级）'}</small> : null}
-                          <em className="product-config-page__required">*</em>
-                        </span>
-                        {def.helpEn || def.helpZh ? (
-                          <small className="product-config-page__field-help">
-                            {lang === 'en' ? def.helpEn : def.helpZh}
-                          </small>
-                        ) : null}
-                        {def.type === 'json' ? (
-                          <textarea
-                            className={settingsFieldErrors[def.key] ? 'product-config-page__input-error' : ''}
-                            rows={6}
-                            value={settingsValues[def.key] ?? ''}
-                            onChange={(e) => updateSettingRawValue(def.key, e.target.value)}
-                            onBlur={() => validateSettingOnBlur(def)}
-                          />
-                        ) : (
-                          <input
-                            className={settingsFieldErrors[def.key] ? 'product-config-page__input-error' : ''}
-                            type={def.type === 'number' ? 'number' : 'text'}
-                            step={def.type === 'number' ? 'any' : undefined}
-                            value={settingsValues[def.key] ?? ''}
-                            onChange={(e) => updateSettingRawValue(def.key, e.target.value)}
-                            onBlur={() => validateSettingOnBlur(def)}
-                          />
-                        )}
-                        {settingsFieldErrors[def.key] ? <small className="product-config-page__field-error">{settingsFieldErrors[def.key]}</small> : null}
-                      </label>
-                    );
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
+        <CatalogSettingsView
+          lang={lang}
+          settingGroups={settingGroups}
+          structuredSettingFields={STRUCTURED_SETTING_FIELDS}
+          settingsValues={settingsValues}
+          settingsFieldErrors={settingsFieldErrors}
+          settingsLoading={settingsLoading}
+          settingsSaving={settingsSaving}
+          settingsError={settingsError}
+          settingsNotice={settingsNotice}
+          getStructuredSettingValue={getStructuredSettingValue}
+          onRefresh={() => void loadSettings()}
+          onSave={handleSaveSettings}
+          onSettingChange={updateSettingRawValue}
+          onSettingBlur={validateSettingOnBlur}
+          onStructuredChange={updateStructuredField}
+          onStructuredBlur={validateStructuredFieldOnBlur}
+        />
       )}
     </section>
   );

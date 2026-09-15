@@ -1,18 +1,19 @@
+"""Regression tests for the HOMER-style economic model's summary fields."""
+
 from __future__ import annotations
 
 import sys
 import unittest
 from pathlib import Path
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.routers.calculate import calculate
-from app.schemas.calculate import CalculateRequest
-from app.schemas.report import ContactInfo, SendReportRequest
-from app.services.reporting.generator import _build_basic_values
+from app.routers.calculate import calculate  # noqa: E402
+from app.schemas.calculate import CalculateRequest  # noqa: E402
+from app.schemas.report import ContactInfo, SendReportRequest  # noqa: E402
+from app.services.reporting.generator import _build_basic_values  # noqa: E402
 
 
 def _sample_request() -> CalculateRequest:
@@ -36,8 +37,11 @@ def _sample_request() -> CalculateRequest:
 
 
 class HomerEconomicRegressionTest(unittest.TestCase):
+    """Regression tests locking in the HOMER-style summary field values."""
+
     @classmethod
     def setUpClass(cls) -> None:
+        """Compute one shared calculate() result for all test methods."""
         cls.result = calculate(_sample_request(), simulate=False)
         assert cls.result["success"], cls.result.get("error")
         cls.summary = cls.result["summary"]
@@ -45,13 +49,19 @@ class HomerEconomicRegressionTest(unittest.TestCase):
         cls.simulation = cls.result["simulation"]
 
     def test_economic_controls_are_propagated(self) -> None:
+        """Project years, discount rate, and inflation rate flow through."""
         self.assertEqual(self.summary["analysisYears"], 20)
         self.assertEqual(self.system_config["projectYears"], 20)
-        self.assertAlmostEqual(self.summary["nominalDiscountRatePct"], 12.0, places=2)
+        self.assertAlmostEqual(
+            self.summary["nominalDiscountRatePct"], 12.0, places=2
+        )
         self.assertAlmostEqual(self.summary["inflationRatePct"], 3.0, places=2)
-        self.assertAlmostEqual(self.summary["realDiscountRatePct"], 8.74, places=2)
+        self.assertAlmostEqual(
+            self.summary["realDiscountRatePct"], 8.74, places=2
+        )
 
     def test_operating_cost_split_is_consistent(self) -> None:
+        """Operating cost totals equal the sum of their line-item parts."""
         mg_total = self.summary["microgridOperatingCostUsd"]
         mg_split = (
             self.summary["mgAnnualFuelUsd"]
@@ -68,11 +78,14 @@ class HomerEconomicRegressionTest(unittest.TestCase):
         self.assertAlmostEqual(diesel_total, diesel_split, places=2)
 
     def test_npc_composition_fields_exist_and_are_bounded(self) -> None:
+        """NPC composition fields are non-negative and self-consistent."""
         self.assertGreater(self.summary["microgridCapitalNpcUsd"], 0.0)
         self.assertGreaterEqual(self.summary["microgridReplacementNpcUsd"], 0.0)
         self.assertGreaterEqual(self.summary["microgridSalvageNpcUsd"], 0.0)
         self.assertGreaterEqual(self.summary["dieselOnlyCapitalNpcUsd"], 0.0)
-        self.assertGreaterEqual(self.summary["dieselOnlyReplacementNpcUsd"], 0.0)
+        self.assertGreaterEqual(
+            self.summary["dieselOnlyReplacementNpcUsd"], 0.0
+        )
         self.assertGreaterEqual(self.summary["dieselOnlySalvageNpcUsd"], 0.0)
 
         mg_structural_npc = (
@@ -86,9 +99,12 @@ class HomerEconomicRegressionTest(unittest.TestCase):
             - self.summary["dieselOnlySalvageNpcUsd"]
         )
         self.assertLessEqual(mg_structural_npc, self.summary["microgridNpcUsd"])
-        self.assertLessEqual(diesel_structural_npc, self.summary["dieselOnlyNpcUsd"])
+        self.assertLessEqual(
+            diesel_structural_npc, self.summary["dieselOnlyNpcUsd"]
+        )
 
     def test_report_basic_values_include_assumptions_and_notes(self) -> None:
+        """Report's basic values embed the economic assumptions/notes text."""
         report_request = SendReportRequest(
             contact=ContactInfo(
                 firstName="Test",
@@ -107,8 +123,13 @@ class HomerEconomicRegressionTest(unittest.TestCase):
         self.assertEqual(basic_values["design_life_years"], 20)
         self.assertIsNotNone(basic_values["tax_basis_notes"])
         self.assertIn("Project life 20 years", basic_values["tax_basis_notes"])
-        self.assertIn("Nominal discount rate 12.00%", basic_values["tax_basis_notes"])
-        self.assertIn("Operating cost is annual fuel plus maintenance/O&M", basic_values["tax_basis_notes"])
+        self.assertIn(
+            "Nominal discount rate 12.00%", basic_values["tax_basis_notes"]
+        )
+        self.assertIn(
+            "Operating cost is annual fuel plus maintenance/O&M",
+            basic_values["tax_basis_notes"],
+        )
 
         self.assertIsNotNone(basic_values["project_notes"])
         self.assertIn("MG fixed O&M", basic_values["project_notes"])

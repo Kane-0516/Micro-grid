@@ -2,7 +2,7 @@
 
 ## English
 
-MicroGrid Configuration System — an off-grid microgrid sizing and configuration platform.
+VoltageEnergy MicroGrid Configuration System — an off-grid microgrid sizing and configuration platform.
 
 Targeting commercial and industrial customers in the US and China markets, providing a complete workflow for site selection, load input, PV/storage/diesel sizing, and economic analysis.
 
@@ -14,7 +14,7 @@ Core boundaries:
 
 ## 中文
 
-MicroGrid 微电网配置系统——离网微电网选型配置平台。
+VoltageEnergy 微电网配置系统——离网微电网选型配置平台。
 
 面向美国和中国市场的工商业客户，提供选址、负荷输入、PV/储能/柴发选型、经济分析的完整流程。
 

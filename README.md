@@ -1,117 +1,61 @@
-﻿# MicroGird
+﻿# MicroGrid-homerpro 微电网方案测算系统
 
-Off-grid **Microgrid Configuration System** for pre-sales sizing and economic analysis.
+这是一个面向售前场景的微电网容量配置与经济性测算系统。项目主要用于根据用户输入的负荷、地区、光伏、储能、柴油机、逆变器等参数，快速生成离网/微电网方案，并输出系统配置、拓扑示意、成本收益和报告结果。
 
-Given site, load, PV, storage, diesel, and inverter inputs, the tool quickly produces a microgrid proposal with system sizing, topology, cost/ROI metrics, and exportable reports.
+项目由两部分组成：
 
-## Stack
+- `frontend/`：前端页面，React + Vite + TypeScript。
+- `backend/`：后端接口，FastAPI，负责产品配置、测算、优化、报告导出、地理编码等功能。
 
-| Part | Path | Tech |
-|------|------|------|
-| Customer UI | `frontend/` | React + Vite + TypeScript |
-| Product Admin UI | `frontend/product-config.html` | Same frontend app, separate entry |
-| API | `backend/` | FastAPI (catalog, sizing, optimize, reports, geocoding) |
+## 一、运行前准备
 
-## Prerequisites
+建议在 Windows 环境运行，当前项目里的启动脚本也是按 Windows 编写的。
 
-Recommended on Windows (startup scripts are Windows-oriented):
+需要提前安装：
 
-1. **Python 3.11+** (tested with 3.13)
-2. **Node.js 20+**
-3. **Docker Desktop** (optional, for local Pelias geocoding)
-4. **Git**
+1. **Python 3.11+**，本机测试脚本中使用过 Python 3.13。
+2. **Node.js 20+**，用于安装和构建前端。
+3. **Docker Desktop**，如果要使用本地 Pelias 地理编码服务，需要启动 Docker。
+4. **Git**，用于拉取/提交代码。
 
-Pelias is optional if you only need the main sizing flow. Enable it when you need map search, address lookup, or reverse geocoding.
+如果只是先看页面和主要测算功能，可以先不管 Pelias；如果要使用地图搜索、地址解析、经纬度反查，就需要启动 Pelias。
 
-## Quick start
+## 二、推荐启动方式：一键启动
 
-From the repo root:
+在项目根目录双击或运行：
 
 ```bat
 start-all.bat
 ```
 
-This script:
+这个脚本会做几件事：
 
-1. Writes frontend geocoder proxy settings
-2. Checks whether Pelias is available
-3. Starts Pelias via Docker Compose if needed
-4. Starts the FastAPI backend on port `6001`
-5. Serves the built frontend from the backend when `frontend/dist/` exists
+1. 写入前端地理编码代理配置。
+2. 检查本地 Pelias 服务是否可用。
+3. 如果 Pelias 没启动，会尝试通过 Docker Compose 启动 Pelias。
+4. 启动后端 FastAPI 服务。
+5. 后端会在 `6001` 端口提供 API，并在已构建前端存在时直接托管前端页面。
 
-Then open:
+启动后访问：
 
-| URL | Purpose |
-|-----|---------|
-| http://localhost:6001/ | Customer configuration tool |
-| http://localhost:6001/product-config | Product configuration console (admin) |
-| http://localhost:6001/docs | OpenAPI / Swagger |
-| http://localhost:6001/api/health | Health check |
+- 前端页面：`http://localhost:6001/`
+- 后端接口文档：`http://localhost:6001/docs`
+- 健康检查：`http://localhost:6001/api/health`
 
-> Prefer `start-all.bat`. Some standalone `start-backend*.cmd` / `start-frontend*.cmd` scripts may still contain machine-specific paths.
+> 说明：`start-all.bat` 是当前更推荐的入口。根目录下有些单独的 `start-backend*.cmd`、`start-frontend*.cmd` 可能保留了旧路径，换电脑后不一定能直接用。
 
-## Product Configuration Console
+## 三、手动启动方式
 
-Engineer-facing admin UI for maintaining the product catalog (not shown to end customers).
+如果一键脚本没有跑起来，可以按下面步骤手动启动。
 
-### What it does
-
-- Create / edit / delete product records (panels, inverters, batteries, diesel, brackets, EMS, etc.)
-- Maintain bilingual display names and pricing fields
-- Edit shared catalog settings (voltage default map, package rules, and related globals)
-- Import / export the product catalog as JSON
-
-### How to open
-
-**Option A — with backend-hosted build** (after `npm run build` + backend on `6001`):
-
-```text
-http://localhost:6001/product-config
-```
-
-**Option B — Vite dev mode** (backend must also be running on `6001` for API calls):
-
-```bat
-cd frontend
-npm install
-npm run dev
-```
-
-Then open:
-
-```text
-http://localhost:5173/product-config
-```
-
-Or use the helper script (opens the product-config entry):
-
-```bat
-start-product-config.cmd
-```
-
-> Note: update the path inside `start-product-config.cmd` if your checkout location differs from the path hardcoded in that file.
-
-### Related files
-
-```text
-frontend/product-config.html
-frontend/src/product-config-main.tsx
-frontend/src/features/product-config/
-backend/app/routers/product_admin.py
-backend/app/routers/product_admin_runtime.py
-backend/products.yaml
-```
-
-## Manual setup
-
-### 1. Backend dependencies
+### 1. 安装后端依赖
 
 ```bat
 cd backend
 python -m pip install -r requirements.txt
 ```
 
-### 2. Build frontend
+### 2. 安装并构建前端
 
 ```bat
 cd frontend
@@ -119,22 +63,31 @@ npm install
 npm run build
 ```
 
-Output:
+构建完成后会生成：
 
 ```text
 frontend/dist/
 ```
 
-The backend serves this directory at `http://localhost:6001/`.
+后端启动时会自动读取这个目录，并把前端页面挂在 `http://localhost:6001/`。
 
-### 3. Start backend
+### 3. 启动后端
+
+回到项目根目录，执行：
 
 ```bat
 cd backend
 python -m uvicorn app.main:app --host 0.0.0.0 --port 6001 --app-dir .
 ```
 
-### 4. Frontend / backend split (development)
+然后访问：
+
+- `http://localhost:6001/`
+- `http://localhost:6001/docs`
+
+### 4. 前后端分开调试
+
+如果要开发前端，可以单独启动 Vite：
 
 ```bat
 cd frontend
@@ -142,134 +95,148 @@ npm install
 npm run dev
 ```
 
-- Frontend: `http://localhost:5173/`
-- Product admin: `http://localhost:5173/product-config`
-- Backend: `http://localhost:6001/`
+默认访问：
 
-Vite proxies `/api` to the backend during development.
+```text
+http://localhost:5173/
+```
 
-## Docker
+后端仍然单独启动在：
 
-Root `docker-compose.yml` includes:
+```text
+http://localhost:6001/
+```
 
-- `postgres` — product catalog database
-- `backend` — FastAPI
-- `frontend` — Nginx static hosting
+## 四、Docker 方式运行
+
+项目根目录提供了 `docker-compose.yml`，包含：
+
+- `postgres`：产品配置数据库。
+- `backend`：FastAPI 后端。
+- `frontend`：Nginx 托管前端静态页面。
+
+启动命令：
 
 ```bat
 docker compose up -d --build
 ```
 
-- Frontend: `http://localhost:8081/`
-- Product admin: `http://localhost:8081/product-config`
-- Backend docs: `http://localhost:6001/docs`
+启动后访问：
+
+- 前端：`http://localhost:8081/`
+- 后端：`http://localhost:6001/docs`
+
+停止服务：
 
 ```bat
 docker compose down
 ```
 
-For Pelias, see:
+如果要同时使用 Pelias，请参考：
 
 - `pelias/README.md`
 - `docs/GEOCODER_PROXY.md`
 - `docs/PELIAS_DOCKER_EXPLAINED.md`
 - `deploy/README.md`
 
-## Repository layout
+## 五、主要目录说明
 
 ```text
-MicroGird/
-├─ frontend/                 # Customer UI + product-config entry
-│  ├─ product-config.html    # Product Configuration Console entry
-│  └─ src/features/
-│     ├─ welcome/            # Landing page
-│     ├─ wizard/             # Known-load & DIY flows
-│     ├─ result/             # Results / ROI / report download
-│     ├─ topology/           # System topology views
-│     └─ product-config/     # Admin catalog UI
-├─ backend/                  # FastAPI API
-│  ├─ app/routers/           # calculate, optimize, report, product admin, geocode
-│  ├─ app/services/          # sizing, simulation, economics, Excel export
-│  └─ products.yaml          # Catalog fallback data
-├─ docs/                     # Design notes and runbooks
-├─ pelias/                   # Geocoder configs
-├─ deploy/                   # Deploy / compose helpers
-└─ start-all.bat             # Recommended one-click start
+MicroGrid-homerpro/
+├─ frontend/              # 前端页面，React + Vite
+├─ backend/               # 后端接口，FastAPI
+├─ backend/app/routers/   # API 路由
+├─ backend/app/services/  # 测算、优化、报告等业务逻辑
+├─ backend/app/schemas/   # 请求和响应数据结构
+├─ backend/products.yaml  # 产品配置兜底数据
+├─ docs/                  # 项目说明与部署文档
+├─ pelias/                # 地理编码相关配置
+├─ deploy/                # 部署脚本和 Docker Compose 配置
+└─ start-all.bat          # 推荐的一键启动入口
 ```
 
-## Main features
+## 六、常用功能入口
 
-1. **Known-load sizing** — site, load, storage, diesel constraints → recommended configuration
-2. **DIY flow** — step-by-step PV / inverter / battery / diesel selection
-3. **Results page** — capacities, cost estimate, ROI charts, contact summary
-4. **Topology views** — microgrid structure and standard-product wiring
-5. **Report export** — downloadable solution workbook
-6. **Product Configuration Console** — catalog, prices, and shared settings for engineers
+系统目前主要包含这些功能：
 
-## Troubleshooting
+1. **已知负荷方案测算**：输入站点、负荷、储能、柴油机等约束，生成推荐配置。
+2. **DIY 配置流程**：按步骤选择光伏、逆变器、电池、柴油机等设备。
+3. **方案结果页**：展示系统容量、投资估算、收益指标和 ROI 图表。
+4. **拓扑展示**：展示微电网系统结构和标准产品连接关系。
+5. **报告导出**：根据测算结果生成可交付的方案报告。
+6. **产品配置管理**：维护标准产品、设备参数和价格配置。
 
-### Page will not open
+## 七、常见问题
 
-Check that the backend is up:
+### 1. 页面打不开怎么办？
+
+先确认后端是否启动成功：
 
 ```text
 http://localhost:6001/docs
 ```
 
-If Swagger does not load, inspect backend logs / the terminal that started uvicorn.
+如果接口文档打不开，说明后端没有启动成功。可以查看：
 
-### Map search / address lookup fails
+- `backend/server-start.out.log`
+- `backend/server-start.err.log`
 
-Geocoding depends on Pelias (default local search URL):
+### 2. 地图搜索或地址解析不可用怎么办？
+
+地理编码依赖 Pelias，本地默认地址一般是：
 
 ```text
 http://localhost:4000/v1/search
 ```
 
-Main sizing usually still works without Pelias.
+如果 Pelias 没启动，地图搜索可能失败，但主要测算流程通常仍可继续使用。
 
-### UI changes do not appear
+### 3. 前端改了代码但页面没变化怎么办？
 
-If the backend is serving `frontend/dist/`, rebuild:
+如果是后端托管 `frontend/dist/` 的方式，需要重新构建前端：
 
 ```bat
 cd frontend
 npm run build
 ```
 
-For live reload during development, use `npm run dev`.
+如果是开发模式，使用：
 
-### Product admin API errors
+```bat
+npm run dev
+```
 
-Confirm:
+### 4. 后端依赖安装失败怎么办？
 
-1. Backend is running on `6001`
-2. You opened `/product-config` (not only the customer home page)
-3. In Vite mode, `/api` proxy reaches the backend
-
-### Python dependency install fails
+建议先升级 pip：
 
 ```bat
 python -m pip install --upgrade pip
+```
+
+然后重新安装：
+
+```bat
 python -m pip install -r backend/requirements.txt
 ```
 
-Heavy packages (`pandas`, solvers, etc.) may take a while.
+部分科学计算依赖如 `pypsa`、`highspy`、`pandas` 可能安装较慢，耐心等一下。
 
-## Smoke checklist
+## 八、快速验证
 
-1. `http://localhost:6001/docs` — API docs load
-2. `http://localhost:6001/api/health` — health OK
-3. `http://localhost:6001/` — customer tool loads
-4. `http://localhost:6001/product-config` — product admin loads and can list catalog items
-5. Walk one known-load or DIY flow through to a result page
+启动成功后，按顺序检查：
 
-## Notes
+1. 打开 `http://localhost:6001/docs`，确认接口文档能显示。
+2. 打开 `http://localhost:6001/api/health`，确认后端健康检查正常。
+3. 打开 `http://localhost:6001/`，确认前端页面能进入。
+4. 在页面中走一遍方案配置流程，确认能生成结果。
 
-This repo is a pre-sales demo / proposal tool, not a production O&M platform. Before a demo or handoff:
+## 九、补充说明
 
-- Rebuild the frontend
-- Verify backend health
-- Verify Pelias if map search is required
-- Review product prices and equipment parameters in the Product Configuration Console
-- Test report export once
+这个项目是售前演示和方案测算项目，重点是让业务人员能够快速生成微电网方案，不是单纯的代码样例。交付或演示前，建议提前完成：
+
+- 前端重新构建。
+- 后端接口启动检查。
+- Pelias 地理编码服务检查。
+- 产品价格和设备参数检查。
+- 报告导出流程检查。

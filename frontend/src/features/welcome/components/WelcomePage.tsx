@@ -14,7 +14,6 @@ export default function WelcomePage({ onStart }: WelcomePageProps) {
       return;
     }
 
-    window.postMessage({ type: 'START_CONFIG' }, '*');
     window.dispatchEvent(new CustomEvent('startConfig'));
   };
 
@@ -23,7 +22,11 @@ export default function WelcomePage({ onStart }: WelcomePageProps) {
       <div className="welcome-header">
         <div className="header-content">
           <div className="header-logo-section">
-            <span className="brand-logo-text">MicroGrid</span>
+            <img
+              src={`${import.meta.env.BASE_URL}voltage-full-logo-white.png`}
+              alt="VOLTAGE"
+              className="voltage-logo-img"
+            />
           </div>
 
           <div style={{ flex: 1 }} />

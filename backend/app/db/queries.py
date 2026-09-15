@@ -1,6 +1,8 @@
+"""Read the product catalog from PostgreSQL.
+
+Reconstructs the shape expected by the frontend API.
 """
-Read the product catalog from PostgreSQL and reconstruct the frontend API shape.
-"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -10,19 +12,26 @@ from psycopg import Connection
 
 def _meta(conn: Connection, key: str, default: Any = None) -> Any:
     with conn.cursor() as cur:
-        cur.execute("SELECT value_json FROM catalog_meta WHERE key = %s", (key,))
+        cur.execute(
+            "SELECT value_json FROM catalog_meta WHERE key = %s", (key,)
+        )
         row = cur.fetchone()
     return row["value_json"] if row else default
 
 
 def _blob(conn: Connection, key: str, default: Any = None) -> Any:
     with conn.cursor() as cur:
-        cur.execute("SELECT json_value FROM catalog_blobs WHERE key = %s", (key,))
+        cur.execute(
+            "SELECT json_value FROM catalog_blobs WHERE key = %s", (key,)
+        )
         row = cur.fetchone()
-    return row["json_value"] if row else (default if default is not None else {})
+    return (
+        row["json_value"] if row else (default if default is not None else {})
+    )
 
 
 def get_all_products(conn: Connection) -> dict:
+    """Build the full product catalog dict from PostgreSQL tables."""
     return {
         "pv_panels": _build_pv_panels(conn),
         "bracket_systems": _build_bracket_systems(conn),
@@ -70,7 +79,9 @@ def _build_pv_panels(conn: Connection) -> dict:
 
 
 def _build_bracket_systems(conn: Connection) -> dict:
-    rows = _fetch_all(conn, "SELECT * FROM bracket_systems ORDER BY panels_per_set")
+    rows = _fetch_all(
+        conn, "SELECT * FROM bracket_systems ORDER BY panels_per_set"
+    )
     models = {
         row["model"]: {
             "display_name": row["display_name"],
@@ -85,7 +96,9 @@ def _build_bracket_systems(conn: Connection) -> dict:
         for row in rows
     }
     return {
-        "default_model": _meta(conn, "bracket_systems.default_model", "standard_32"),
+        "default_model": _meta(
+            conn, "bracket_systems.default_model", "standard_32"
+        ),
         "spacing_m": _meta(conn, "bracket_systems.spacing_m", 3.048),
         "models": models,
     }
@@ -108,8 +121,12 @@ def _build_battery_packs(conn: Connection) -> dict:
         for row in rows
     }
     return {
-        "default_model": _meta(conn, "battery_packs.default_model", "LFP-16kWh"),
-        "price_usd_per_kwh_fallback": _meta(conn, "battery_packs.price_usd_per_kwh_fallback", 300.0),
+        "default_model": _meta(
+            conn, "battery_packs.default_model", "LFP-16kWh"
+        ),
+        "price_usd_per_kwh_fallback": _meta(
+            conn, "battery_packs.price_usd_per_kwh_fallback", 300.0
+        ),
         "models": models,
     }
 
@@ -144,7 +161,9 @@ def _build_diesel_generators(conn: Connection) -> dict:
             "display_name_zh": row["display_name_zh"],
             "power_kw": row["power_kw"],
             "price_usd": row["price_usd"],
-            "fuel_efficiency_kwh_per_liter": row["fuel_efficiency_kwh_per_liter"],
+            "fuel_efficiency_kwh_per_liter": row[
+                "fuel_efficiency_kwh_per_liter"
+            ],
             "fuel_intercept_coeff": row.get("fuel_intercept_coeff", 0.033),
             "fuel_slope_coeff": row.get("fuel_slope_coeff", 0.273),
             "description": row["description"],
@@ -152,7 +171,9 @@ def _build_diesel_generators(conn: Connection) -> dict:
         for row in rows
     }
     return {
-        "price_usd_per_kw": _meta(conn, "diesel_generators.price_usd_per_kw", 1125.0),
+        "price_usd_per_kw": _meta(
+            conn, "diesel_generators.price_usd_per_kw", 1125.0
+        ),
         "models": models,
     }
 
@@ -175,11 +196,16 @@ def _build_integrated_pv_storage(conn: Connection) -> dict:
 
 
 def _build_standard_products(conn: Connection) -> dict:
-    rows = _fetch_all(conn, "SELECT package_id, data_json FROM standard_packages ORDER BY package_id")
+    rows = _fetch_all(
+        conn,
+        "SELECT package_id, data_json FROM standard_packages ORDER BY "
+        "package_id",
+    )
     return {"packages": {row["package_id"]: row["data_json"] for row in rows}}
 
 
 def build_product_catalog(conn: Connection):
+    """Build a ProductCatalog backed by the current PostgreSQL data."""
     from app.services.config_loader import ProductCatalog
 
     data = get_all_products(conn)

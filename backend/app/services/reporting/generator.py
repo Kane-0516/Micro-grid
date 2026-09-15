@@ -1,3 +1,5 @@
+"""基于 Excel 模板填充方案数据，按受众隐藏对应工作表."""
+
 from __future__ import annotations
 
 import io
@@ -24,7 +26,12 @@ from app.services.reporting.template_layout import (
     validate_internal_template_formulas,
     validate_template_layouts,
 )
-from app.services.template_cost_engine import DetailLine, OpexLine, TemplateCostBreakdown, build_template_cost_breakdown
+from app.services.template_cost_engine import (
+    DetailLine,
+    OpexLine,
+    TemplateCostBreakdown,
+    build_template_cost_breakdown,
+)
 
 
 def _blank(value: Any) -> Any:
@@ -99,18 +106,35 @@ def _rename_customer_sheet_titles(workbook, internal: bool) -> None:
 
 
 def get_report_file_name(email: str) -> str:
+    """Build the download file name for a report sent to the given email.
+
+    Args:
+        email: Recipient email address.
+
+    Returns:
+        A file name of the form
+        VoltageEnergy_Microgrid_<audience>_<local>_<date>.xlsx.
+    """
     audience = "internal" if is_internal_email(email) else "customer"
     local = (email or "").split("@", 1)[0].strip().lower() or "report"
     local = re.sub(r"[^a-z0-9._-]+", "_", local).strip("_") or "report"
     stamp = datetime.now().strftime("%Y%m%d")
-    return f"MicroGrid_Microgrid_{audience}_{local}_{stamp}.xlsx"
+    return f"VoltageEnergy_Microgrid_{audience}_{local}_{stamp}.xlsx"
 
 
-def _derive_diesel_price_usd(summary: dict[str, Any], simulation: dict[str, Any]) -> float | None:
+def _derive_diesel_price_usd(
+    summary: dict[str, Any], simulation: dict[str, Any]
+) -> float | None:
     candidates = (
-        (summary.get("dieselAnnualFuelUsd"), simulation.get("dieselOnlyLiters")),
+        (
+            summary.get("dieselAnnualFuelUsd"),
+            simulation.get("dieselOnlyLiters"),
+        ),
         (summary.get("mgAnnualFuelUsd"), simulation.get("mgDieselLiters")),
-        (simulation.get("annualFuelSavingUsd"), simulation.get("annualFuelSavingLiters")),
+        (
+            simulation.get("annualFuelSavingUsd"),
+            simulation.get("annualFuelSavingLiters"),
+        ),
     )
     for numerator, denominator in candidates:
         num = _safe_float(numerator)
@@ -120,7 +144,9 @@ def _derive_diesel_price_usd(summary: dict[str, Any], simulation: dict[str, Any]
     return None
 
 
-def _project_site_text(req: SendReportRequest, system_config: dict[str, Any]) -> str | None:
+def _project_site_text(
+    req: SendReportRequest, system_config: dict[str, Any]
+) -> str | None:
     parts = [part for part in [req.contact.city, req.contact.state] if part]
     latitude = _safe_float(system_config.get("latitude"))
     if latitude is not None:
@@ -128,10 +154,19 @@ def _project_site_text(req: SendReportRequest, system_config: dict[str, Any]) ->
     return ", ".join(parts) if parts else None
 
 
-def _economic_assumptions_text(system_config: dict[str, Any], summary: dict[str, Any]) -> str | None:
-    project_years = _safe_int(system_config.get("projectYears") or summary.get("analysisYears"))
-    nominal_pct = _safe_float(summary.get("nominalDiscountRatePct") or system_config.get("nominalDiscountRatePct"))
-    inflation_pct = _safe_float(summary.get("inflationRatePct") or system_config.get("inflationRatePct"))
+def _economic_assumptions_text(
+    system_config: dict[str, Any], summary: dict[str, Any]
+) -> str | None:
+    project_years = _safe_int(
+        system_config.get("projectYears") or summary.get("analysisYears")
+    )
+    nominal_pct = _safe_float(
+        summary.get("nominalDiscountRatePct")
+        or system_config.get("nominalDiscountRatePct")
+    )
+    inflation_pct = _safe_float(
+        summary.get("inflationRatePct") or system_config.get("inflationRatePct")
+    )
     real_pct = _safe_float(summary.get("realDiscountRatePct"))
 
     parts: list[str] = []
@@ -144,80 +179,74 @@ def _economic_assumptions_text(system_config: dict[str, Any], summary: dict[str,
     if real_pct is not None:
         parts.append(f"Real discount rate {real_pct:.2f}%")
     parts.append(
-        "Operating cost is annual fuel plus maintenance/O&M; NPC composition lists discounted capital, replacement, and salvage-credit contributions only"
+        "Operating cost is annual fuel plus maintenance/O&M; NPC "
+        "composition lists discounted capital, replacement, and "
+        "salvage-credit contributions only"
     )
     return "; ".join(parts) if parts else None
 
 
-def _asset_life_notes(summary: dict[str, Any], simulation: dict[str, Any], system_config: dict[str, Any]) -> str | None:
+def _append_numeric_note(
+    notes: list[str],
+    source: dict[str, Any],
+    key: str,
+    template: str,
+    *,
+    integer: bool = False,
+) -> None:
+    value = (
+        _safe_int(source.get(key)) if integer else _safe_float(source.get(key))
+    )
+    if value is not None:
+        notes.append(template.format(value=value))
+
+
+def _asset_life_notes(
+    summary: dict[str, Any],
+    simulation: dict[str, Any],
+    system_config: dict[str, Any],
+) -> str | None:
     notes: list[str] = []
     dispatch_mode = system_config.get("dieselDispatchMode")
     if dispatch_mode:
         notes.append(f"Dispatch mode {dispatch_mode}")
 
-    mg_runtime = _safe_int(simulation.get("mgDieselHours"))
-    if mg_runtime is not None:
-        notes.append(f"Microgrid diesel runtime {mg_runtime} h/yr")
-
-    diesel_runtime = _safe_int(simulation.get("dieselRunHoursA"))
-    if diesel_runtime is not None:
-        notes.append(f"Diesel-only runtime {diesel_runtime} h/yr")
-
-    mg_gen_life = _safe_float(summary.get("microgridGeneratorLifeYears"))
-    if mg_gen_life is not None:
-        notes.append(f"MG generator life {mg_gen_life:.1f} years")
-
-    diesel_only_life = _safe_float(summary.get("dieselOnlyGeneratorLifeYears"))
-    if diesel_only_life is not None:
-        notes.append(f"Diesel-only generator life {diesel_only_life:.1f} years")
-
-    battery_life = _safe_float(summary.get("batteryLifeYears"))
-    if battery_life is not None:
-        notes.append(f"Battery life {battery_life:.1f} years")
-
-    mg_fuel = _safe_float(summary.get("mgAnnualFuelUsd"))
-    if mg_fuel is not None:
-        notes.append(f"MG fuel ${mg_fuel:.2f}/yr")
-
-    mg_fixed_om = _safe_float(summary.get("microgridFixedOmUsd"))
-    if mg_fixed_om is not None:
-        notes.append(f"MG fixed O&M ${mg_fixed_om:.2f}/yr")
-
-    mg_maint = _safe_float(summary.get("microgridGeneratorMaintenanceUsd"))
-    if mg_maint is not None:
-        notes.append(f"MG generator maintenance ${mg_maint:.2f}/yr")
-
-    diesel_fuel = _safe_float(summary.get("dieselAnnualFuelUsd"))
-    if diesel_fuel is not None:
-        notes.append(f"Diesel-only fuel ${diesel_fuel:.2f}/yr")
-
-    diesel_maint = _safe_float(summary.get("dieselOnlyGeneratorMaintenanceUsd"))
-    if diesel_maint is not None:
-        notes.append(f"Diesel-only maintenance ${diesel_maint:.2f}/yr")
-
-    mg_capital_npc = _safe_float(summary.get("microgridCapitalNpcUsd"))
-    if mg_capital_npc is not None:
-        notes.append(f"MG capital NPC ${mg_capital_npc:.2f}")
-
-    mg_replacement_npc = _safe_float(summary.get("microgridReplacementNpcUsd"))
-    if mg_replacement_npc is not None:
-        notes.append(f"MG replacement NPC ${mg_replacement_npc:.2f}")
-
-    mg_salvage_npc = _safe_float(summary.get("microgridSalvageNpcUsd"))
-    if mg_salvage_npc is not None:
-        notes.append(f"MG salvage credit ${mg_salvage_npc:.2f}")
-
-    diesel_capital_npc = _safe_float(summary.get("dieselOnlyCapitalNpcUsd"))
-    if diesel_capital_npc is not None:
-        notes.append(f"Diesel-only capital NPC ${diesel_capital_npc:.2f}")
-
-    diesel_replacement_npc = _safe_float(summary.get("dieselOnlyReplacementNpcUsd"))
-    if diesel_replacement_npc is not None:
-        notes.append(f"Diesel-only replacement NPC ${diesel_replacement_npc:.2f}")
-
-    diesel_salvage_npc = _safe_float(summary.get("dieselOnlySalvageNpcUsd"))
-    if diesel_salvage_npc is not None:
-        notes.append(f"Diesel-only salvage credit ${diesel_salvage_npc:.2f}")
+    simulation_notes = (
+        ("mgDieselHours", "Microgrid diesel runtime {value} h/yr"),
+        ("dieselRunHoursA", "Diesel-only runtime {value} h/yr"),
+    )
+    summary_notes = (
+        ("microgridGeneratorLifeYears", "MG generator life {value:.1f} years"),
+        (
+            "dieselOnlyGeneratorLifeYears",
+            "Diesel-only generator life {value:.1f} years",
+        ),
+        ("batteryLifeYears", "Battery life {value:.1f} years"),
+        ("mgAnnualFuelUsd", "MG fuel ${value:.2f}/yr"),
+        ("microgridFixedOmUsd", "MG fixed O&M ${value:.2f}/yr"),
+        (
+            "microgridGeneratorMaintenanceUsd",
+            "MG generator maintenance ${value:.2f}/yr",
+        ),
+        ("dieselAnnualFuelUsd", "Diesel-only fuel ${value:.2f}/yr"),
+        (
+            "dieselOnlyGeneratorMaintenanceUsd",
+            "Diesel-only maintenance ${value:.2f}/yr",
+        ),
+        ("microgridCapitalNpcUsd", "MG capital NPC ${value:.2f}"),
+        ("microgridReplacementNpcUsd", "MG replacement NPC ${value:.2f}"),
+        ("microgridSalvageNpcUsd", "MG salvage credit ${value:.2f}"),
+        ("dieselOnlyCapitalNpcUsd", "Diesel-only capital NPC ${value:.2f}"),
+        (
+            "dieselOnlyReplacementNpcUsd",
+            "Diesel-only replacement NPC ${value:.2f}",
+        ),
+        ("dieselOnlySalvageNpcUsd", "Diesel-only salvage credit ${value:.2f}"),
+    )
+    for key, template in simulation_notes:
+        _append_numeric_note(notes, simulation, key, template, integer=True)
+    for key, template in summary_notes:
+        _append_numeric_note(notes, summary, key, template)
 
     return "; ".join(notes) if notes else None
 
@@ -226,10 +255,16 @@ def _build_basic_values(req: SendReportRequest) -> dict[str, Any]:
     system_config = req.systemConfig or {}
     summary = req.summary or {}
     simulation = req.simulation or {}
-    annual_load = _safe_float(summary.get("annualLoadKwh") or system_config.get("annualLoadKwh"))
+    annual_load = _safe_float(
+        summary.get("annualLoadKwh") or system_config.get("annualLoadKwh")
+    )
     project_name = (
         summary.get("projectName")
-        or (f"{req.contact.company} Microgrid Proposal" if req.contact.company else None)
+        or (
+            f"{req.contact.company} Microgrid Proposal"
+            if req.contact.company
+            else None
+        )
         or "Microgrid Proposal"
     )
     site = _project_site_text(req, system_config)
@@ -243,7 +278,9 @@ def _build_basic_values(req: SendReportRequest) -> dict[str, Any]:
     ]
     return {
         "project_name": project_name,
-        "client_owner": req.contact.company or f"{req.contact.firstName} {req.contact.lastName}".strip() or None,
+        "client_owner": req.contact.company
+        or f"{req.contact.firstName} {req.contact.lastName}".strip()
+        or None,
         "country_region": system_config.get("country") or "United States",
         "site": site,
         "quotation_date": datetime.now(),
@@ -251,20 +288,28 @@ def _build_basic_values(req: SendReportRequest) -> dict[str, Any]:
         "pv_size_kwp": _safe_float(system_config.get("pvCapacityKw")),
         "bess_size_kwh": _safe_float(system_config.get("batteryCapacityKwh")),
         "diesel_size_kw": _safe_float(system_config.get("dieselCapacityKw")),
-        "daily_energy_demand_kwh": round(annual_load / 365.0, 2) if annual_load else None,
+        "daily_energy_demand_kwh": round(annual_load / 365.0, 2)
+        if annual_load
+        else None,
         "design_life_years": _safe_int(summary.get("analysisYears")) or 25,
         "base_currency": "USD",
         "tax_basis_notes": _economic_assumptions_text(system_config, summary),
-        "project_notes": " | ".join(project_note_parts) if project_note_parts else None,
+        "project_notes": " | ".join(project_note_parts)
+        if project_note_parts
+        else None,
     }
 
 
-def _write_basic_sheet(ws, layout: WorkbookLayout, values: dict[str, Any]) -> None:
+def _write_basic_sheet(
+    ws, layout: WorkbookLayout, values: dict[str, Any]
+) -> None:
     for key, row in layout.basic.rows.items():
         ws[f"{layout.basic.input_column}{row}"] = _blank(values.get(key))
 
 
-def _write_internal_detail_sheet(ws, section_layout, lines: list[DetailLine]) -> None:
+def _write_internal_detail_sheet(
+    ws, section_layout, lines: list[DetailLine]
+) -> None:
     for line in lines:
         row = section_layout.rows[line.key]
         ws[f"B{row}"] = _blank(line.system)
@@ -286,7 +331,9 @@ def _write_internal_detail_sheet(ws, section_layout, lines: list[DetailLine]) ->
         ws[f"S{row}"] = YES if line.include else NO
 
 
-def _write_customer_detail_sheet(ws, section_layout, lines: list[DetailLine]) -> None:
+def _write_customer_detail_sheet(
+    ws, section_layout, lines: list[DetailLine]
+) -> None:
     for line in lines:
         row = section_layout.rows[line.key]
         ws[f"B{row}"] = _blank(line.system)
@@ -299,7 +346,9 @@ def _write_customer_detail_sheet(ws, section_layout, lines: list[DetailLine]) ->
         ws[f"I{row}"] = _blank(line.qty)
 
 
-def _write_internal_opex_sheet(ws, section_layout, lines: list[OpexLine]) -> None:
+def _write_internal_opex_sheet(
+    ws, section_layout, lines: list[OpexLine]
+) -> None:
     defaults = get_internal_template_defaults().opex
     for line in lines:
         row = section_layout.rows[line.key]
@@ -319,22 +368,33 @@ def _write_internal_opex_sheet(ws, section_layout, lines: list[OpexLine]) -> Non
         ws[f"N{row}"] = YES if line.include else NO
 
 
-def _write_internal_runtime_inputs(ws_fuel, layout: WorkbookLayout, req: SendReportRequest, breakdown: TemplateCostBreakdown) -> None:
+def _write_internal_runtime_inputs(
+    ws_fuel,
+    layout: WorkbookLayout,
+    req: SendReportRequest,
+    breakdown: TemplateCostBreakdown,
+) -> None:
     summary = req.summary or {}
     simulation = req.simulation or {}
     cells = layout.fuel_input_cells or {}
     diesel_price = _derive_diesel_price_usd(summary, simulation)
     values = {
         "diesel_price_usd_per_liter": diesel_price,
-        "estimated_annual_runtime_hours": _safe_float(simulation.get("mgDieselHours")),
-        "estimated_annual_fuel_use_liters": _safe_float(simulation.get("mgDieselLiters")),
+        "estimated_annual_runtime_hours": _safe_float(
+            simulation.get("mgDieselHours")
+        ),
+        "estimated_annual_fuel_use_liters": _safe_float(
+            simulation.get("mgDieselLiters")
+        ),
     }
     for key, cell in cells.items():
         if key in values and values[key] is not None:
             ws_fuel[cell] = values[key]
 
     ws_maintenance = internal_sheet(ws_fuel.parent, "diesel_maintenance")
-    for attr, cell in (layout.diesel_maintenance_adjustment_cells or {}).items():
+    for attr, cell in (
+        layout.diesel_maintenance_adjustment_cells or {}
+    ).items():
         ws_maintenance[cell] = getattr(breakdown.diesel_om, attr)
 
 
@@ -348,11 +408,26 @@ def _build_breakdown(req: SendReportRequest) -> TemplateCostBreakdown:
 
 
 def build_solution_report(req: SendReportRequest) -> bytes:
+    """Fill the Excel template with the solution data and return it.
+
+    Args:
+        req: The report request, including contact and solution data.
+
+    Returns:
+        The generated .xlsx file content.
+    """
     validate_template_layouts()
     validate_internal_template_formulas()
     internal = is_internal_email(req.contact.email)
-    layout = get_internal_template_layout() if internal else get_customer_template_layout()
-    workbook = load_workbook(INTERNAL_TEMPLATE_PATH if internal else CUSTOMER_TEMPLATE_PATH, data_only=False)
+    layout = (
+        get_internal_template_layout()
+        if internal
+        else get_customer_template_layout()
+    )
+    workbook = load_workbook(
+        INTERNAL_TEMPLATE_PATH if internal else CUSTOMER_TEMPLATE_PATH,
+        data_only=False,
+    )
     _set_full_recalc(workbook)
     _hide_dropdown_sheet(workbook)
     _hide_customer_only_sheets(workbook, internal)
@@ -361,7 +436,11 @@ def build_solution_report(req: SendReportRequest) -> bytes:
     breakdown = _build_breakdown(req)
     basic_values = _build_basic_values(req)
 
-    basic_ws = internal_sheet(workbook, "basic") if internal else customer_sheet(workbook, "basic")
+    basic_ws = (
+        internal_sheet(workbook, "basic")
+        if internal
+        else customer_sheet(workbook, "basic")
+    )
     _write_basic_sheet(basic_ws, layout, basic_values)
 
     section_lines = {
@@ -371,16 +450,34 @@ def build_solution_report(req: SendReportRequest) -> bytes:
         "electrical": breakdown.electrical_lines,
     }
     for section_key, lines in section_lines.items():
-        ws = internal_sheet(workbook, section_key) if internal else customer_sheet(workbook, section_key)
+        ws = (
+            internal_sheet(workbook, section_key)
+            if internal
+            else customer_sheet(workbook, section_key)
+        )
         if internal:
-            _write_internal_detail_sheet(ws, layout.sections[section_key], lines)
+            _write_internal_detail_sheet(
+                ws, layout.sections[section_key], lines
+            )
         else:
-            _write_customer_detail_sheet(ws, layout.sections[section_key], lines)
+            _write_customer_detail_sheet(
+                ws, layout.sections[section_key], lines
+            )
 
     if internal:
-        _write_internal_detail_sheet(internal_sheet(workbook, "logistics"), layout.sections["logistics"], breakdown.logistics_lines)
-        _write_internal_opex_sheet(internal_sheet(workbook, "opex"), layout.sections["opex"], breakdown.opex_lines)
-        _write_internal_runtime_inputs(internal_sheet(workbook, "fuel"), layout, req, breakdown)
+        _write_internal_detail_sheet(
+            internal_sheet(workbook, "logistics"),
+            layout.sections["logistics"],
+            breakdown.logistics_lines,
+        )
+        _write_internal_opex_sheet(
+            internal_sheet(workbook, "opex"),
+            layout.sections["opex"],
+            breakdown.opex_lines,
+        )
+        _write_internal_runtime_inputs(
+            internal_sheet(workbook, "fuel"), layout, req, breakdown
+        )
     else:
         _rename_customer_sheet_titles(workbook, internal)
 

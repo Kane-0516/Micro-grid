@@ -1,37 +1,32 @@
-﻿"""
-microgrid_simulator.py
-=======================
-    PyPSA                         ?
+"""基于 PyPSA 的离网微电网能量仿真.
 
-    ?
--         +     +        ?            
--      8760         
--                      
--                
--            
+从 NASA POWER 获取逐时辐照度/气温/风速，用 pvlib 计算光伏出力，
+再用 PyPSA 求解全年 8760 小时的光伏 + 储能 + 柴油发电机运行时序。
 """
 
 from __future__ import annotations
 
-from datetime import timedelta, timezone
 import warnings
+from datetime import timedelta, timezone
 from functools import lru_cache
 
 import httpx
 import numpy as np
 import pandas as pd
 import pypsa
-from pvlib import irradiance, inverter, pvsystem, solarposition, temperature
+from pvlib import inverter, irradiance, pvsystem, solarposition, temperature
 
 warnings.filterwarnings("ignore")
 
 
-#                                                                                                                           
-# 1.                 atlite            
-#                                                                                                                           
+#
+# 1.                 atlite
+#
 
 _NASA_POWER_HOURLY_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point"
-_NASA_POWER_CLIMATOLOGY_URL = "https://power.larc.nasa.gov/api/temporal/climatology/point"
+_NASA_POWER_CLIMATOLOGY_URL = (
+    "https://power.larc.nasa.gov/api/temporal/climatology/point"
+)
 _NASA_POWER_TIMEOUT = 12.0
 _NASA_POWER_HOURLY_PARAMETERS = {
     "ALLSKY_SFC_SW_DWN": "ghi_wm2",
@@ -45,15 +40,34 @@ _PV_GAMMA_PDC = -0.004
 _PV_SYSTEM_LOSS_FRACTION = 0.14
 _PV_INVERTER_EFFICIENCY = 0.96
 _PV_ALBEDO = 0.2
-_PV_TEMPERATURE_MODEL = temperature.TEMPERATURE_MODEL_PARAMETERS["sapm"]["open_rack_glass_polymer"]
+_PV_TEMPERATURE_MODEL = temperature.TEMPERATURE_MODEL_PARAMETERS["sapm"][
+    "open_rack_glass_polymer"
+]
 
 
 def _simulation_snapshots(year: int) -> pd.DatetimeIndex:
     return pd.date_range(f"{year}-01-01", periods=8760, freq="h")
 
 
+def _parse_nasa_parameter(
+    parameter_block: dict,
+    snapshots: pd.DatetimeIndex,
+) -> pd.Series:
+    values: dict[pd.Timestamp, float] = {}
+    for key, raw_value in parameter_block.items():
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if value > -900:
+            values[pd.to_datetime(str(key), format="%Y%m%d%H")] = value
+    return pd.Series(values, dtype=float).sort_index().reindex(snapshots)
+
+
 @lru_cache(maxsize=256)
-def _fetch_nasa_power_hourly_weather(latitude: float, longitude: float, year: int) -> pd.DataFrame:
+def _fetch_nasa_power_hourly_weather(
+    latitude: float, longitude: float, year: int
+) -> pd.DataFrame:
     params = {
         "parameters": ",".join(_NASA_POWER_HOURLY_PARAMETERS),
         "community": "RE",
@@ -78,37 +92,41 @@ def _fetch_nasa_power_hourly_weather(latitude: float, longitude: float, year: in
         parameter_block = parameter_data.get(nasa_name, {})
         if not isinstance(parameter_block, dict) or not parameter_block:
             if nasa_name == "ALLSKY_SFC_SW_DWN":
-                raise ValueError(f"NASA POWER response missing {nasa_name} data")
+                raise ValueError(
+                    f"NASA POWER response missing {nasa_name} data"
+                )
             weather[column_name] = np.nan
             continue
 
-        values: dict[pd.Timestamp, float] = {}
-        for key, raw_value in parameter_block.items():
-            try:
-                value = float(raw_value)
-            except (TypeError, ValueError):
-                continue
-            if value <= -900:
-                continue
-            timestamp = pd.to_datetime(str(key), format="%Y%m%d%H")
-            values[timestamp] = value
-
-        series = pd.Series(values, dtype=float).sort_index().reindex(snapshots)
+        series = _parse_nasa_parameter(parameter_block, snapshots)
         if series.isna().all():
             if nasa_name == "ALLSKY_SFC_SW_DWN":
-                raise ValueError(f"NASA POWER hourly {nasa_name} did not align with simulation snapshots")
+                raise ValueError(
+                    f"NASA POWER hourly {nasa_name} did not align with "
+                    "simulation snapshots"
+                )
             weather[column_name] = np.nan
             continue
 
-        weather[column_name] = series.interpolate(limit_direction="both").ffill().bfill()
+        weather[column_name] = (
+            series.interpolate(limit_direction="both").ffill().bfill()
+        )
 
     weather["ghi_wm2"] = weather["ghi_wm2"].clip(lower=0.0).fillna(0.0)
-    weather["temp_air_c"] = weather.get("temp_air_c", pd.Series(index=snapshots, dtype=float)).fillna(25.0)
-    weather["wind_speed_mps"] = weather.get("wind_speed_mps", pd.Series(index=snapshots, dtype=float)).clip(lower=0.0).fillna(1.0)
+    weather["temp_air_c"] = weather.get(
+        "temp_air_c", pd.Series(index=snapshots, dtype=float)
+    ).fillna(25.0)
+    weather["wind_speed_mps"] = (
+        weather.get("wind_speed_mps", pd.Series(index=snapshots, dtype=float))
+        .clip(lower=0.0)
+        .fillna(1.0)
+    )
     return weather
 
 
-def _fetch_nasa_power_hourly_irradiance(latitude: float, longitude: float, year: int) -> pd.Series:
+def _fetch_nasa_power_hourly_irradiance(
+    latitude: float, longitude: float, year: int
+) -> pd.Series:
     """Return NASA POWER hourly irradiance as kWh/m2 over each hour."""
     weather = _fetch_nasa_power_hourly_weather(latitude, longitude, year)
     return (weather["ghi_wm2"] / 1000.0).rename("ghi_kwh_m2")
@@ -121,6 +139,17 @@ def fetch_nasa_power_climatology_tilted_solar_hours(
     start_year: int = _NASA_POWER_CLIMATOLOGY_START_YEAR,
     end_year: int = _NASA_POWER_CLIMATOLOGY_END_YEAR,
 ) -> dict[int, float]:
+    """Return NASA POWER's optimal-tilt monthly average peak sun hours.
+
+    Args:
+        latitude: Site latitude.
+        longitude: Site longitude.
+        start_year: First year of the climatology averaging window.
+        end_year: Last year of the climatology averaging window.
+
+    Returns:
+        A mapping of month number (1-12) to peak sun hours.
+    """
     params = {
         "parameters": _NASA_POWER_CLIMATOLOGY_PARAMETER,
         "community": "RE",
@@ -142,11 +171,23 @@ def fetch_nasa_power_climatology_tilted_solar_hours(
         .get(_NASA_POWER_CLIMATOLOGY_PARAMETER, {})
     )
     if not isinstance(values, dict) or not values:
-        raise ValueError("NASA POWER climatology response missing tilted solar data")
+        raise ValueError(
+            "NASA POWER climatology response missing tilted solar data"
+        )
 
     month_map = {
-        "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
-        "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+        "JAN": 1,
+        "FEB": 2,
+        "MAR": 3,
+        "APR": 4,
+        "MAY": 5,
+        "JUN": 6,
+        "JUL": 7,
+        "AUG": 8,
+        "SEP": 9,
+        "OCT": 10,
+        "NOV": 11,
+        "DEC": 12,
     }
     result: dict[int, float] = {}
     for key, month in month_map.items():
@@ -156,7 +197,9 @@ def fetch_nasa_power_climatology_tilted_solar_hours(
         result[month] = float(raw)
 
     if len(result) != 12:
-        raise ValueError(f"Incomplete climatology data returned: months={sorted(result)}")
+        raise ValueError(
+            f"Incomplete climatology data returned: months={sorted(result)}"
+        )
 
     return result
 
@@ -186,18 +229,28 @@ def _build_pvlib_pv_profile(
     if panel_capacity_kw <= 0:
         return pd.Series(0.0, index=snapshots, name="pv_cf")
 
-    weather = _fetch_nasa_power_hourly_weather(round(latitude, 4), round(longitude, 4), year)
-    localized_snapshots = snapshots.tz_localize(_timezone_from_longitude(longitude))
+    weather = _fetch_nasa_power_hourly_weather(
+        round(latitude, 4), round(longitude, 4), year
+    )
+    localized_snapshots = snapshots.tz_localize(
+        _timezone_from_longitude(longitude)
+    )
     weather_local = weather.copy()
     weather_local.index = localized_snapshots
 
-    solpos = solarposition.get_solarposition(localized_snapshots, latitude, longitude)
+    solpos = solarposition.get_solarposition(
+        localized_snapshots, latitude, longitude
+    )
     solar_zenith = solpos["apparent_zenith"].clip(upper=90.0)
     solar_azimuth = solpos["azimuth"]
 
     ghi = weather_local["ghi_wm2"]
     dni = irradiance.disc(ghi, solar_zenith, localized_snapshots)["dni"]
-    dni = pd.Series(dni, index=localized_snapshots, dtype=float).clip(lower=0.0).fillna(0.0)
+    dni = (
+        pd.Series(dni, index=localized_snapshots, dtype=float)
+        .clip(lower=0.0)
+        .fillna(0.0)
+    )
 
     cos_zenith = pd.Series(
         np.clip(np.cos(np.radians(solar_zenith.to_numpy())), 0.0, None),
@@ -221,7 +274,11 @@ def _build_pvlib_pv_profile(
         albedo=_PV_ALBEDO,
         model="haydavies",
     )
-    poa_global = pd.Series(poa["poa_global"], index=localized_snapshots, dtype=float).clip(lower=0.0).fillna(0.0)
+    poa_global = (
+        pd.Series(poa["poa_global"], index=localized_snapshots, dtype=float)
+        .clip(lower=0.0)
+        .fillna(0.0)
+    )
 
     temp_cell = temperature.sapm_cell(
         poa_global=poa_global,
@@ -235,14 +292,22 @@ def _build_pvlib_pv_profile(
         pdc0=panel_capacity_kw * 1000.0,
         gamma_pdc=_PV_GAMMA_PDC,
     )
-    pdc = pd.Series(pdc, index=localized_snapshots, dtype=float).clip(lower=0.0).fillna(0.0)
+    pdc = (
+        pd.Series(pdc, index=localized_snapshots, dtype=float)
+        .clip(lower=0.0)
+        .fillna(0.0)
+    )
     pdc_net = pdc * (1.0 - _PV_SYSTEM_LOSS_FRACTION)
     pac = inverter.pvwatts(
         pdc=pdc_net,
         pdc0=panel_capacity_kw * 1000.0,
         eta_inv_nom=_PV_INVERTER_EFFICIENCY,
     )
-    pac = pd.Series(pac, index=localized_snapshots, dtype=float).clip(lower=0.0).fillna(0.0)
+    pac = (
+        pd.Series(pac, index=localized_snapshots, dtype=float)
+        .clip(lower=0.0)
+        .fillna(0.0)
+    )
     cf = (pac / (panel_capacity_kw * 1000.0)).clip(lower=0.0, upper=1.0)
     return pd.Series(cf.to_numpy(), index=snapshots, name="pv_cf")
 
@@ -255,12 +320,20 @@ def _generate_simplified_pv_profile(
     hours = np.arange(len(snapshots))
 
     day_of_year = snapshots.day_of_year.values
-    solar_declination = 23.45 * np.sin(np.radians(360 / 365 * (day_of_year - 81)))
+    solar_declination = 23.45 * np.sin(
+        np.radians(360 / 365 * (day_of_year - 81))
+    )
     max_sun_hours = np.clip(
-        2 / 15 * np.degrees(
-            np.arccos(-np.tan(np.radians(latitude)) * np.tan(np.radians(solar_declination)))
+        2
+        / 15
+        * np.degrees(
+            np.arccos(
+                -np.tan(np.radians(latitude))
+                * np.tan(np.radians(solar_declination))
+            )
         ),
-        0, 24
+        0,
+        24,
     )
 
     hour_of_day = hours % 24
@@ -289,13 +362,15 @@ def _generate_simplified_pv_profile(
             h += 24
 
     total_days = max(1, len(snapshots) // 24)
-    partial_days = np.random.choice(total_days, size=max(1, int(total_days * 0.10)), replace=False)
+    partial_days = np.random.choice(
+        total_days, size=max(1, int(total_days * 0.10)), replace=False
+    )
     for day in partial_days:
         s, e = day * 24, min((day + 1) * 24, len(snapshots))
         cloud_factor[s:e] = np.where(
             cloud_factor[s:e] == 1.0,
             np.random.uniform(0.4, 0.8),
-            cloud_factor[s:e]
+            cloud_factor[s:e],
         )
 
     cf = cf * cloud_factor
@@ -323,27 +398,21 @@ def generate_pv_profile(
     return (profile * factor).clip(lower=0.0, upper=1.0)
 
 
-
 def generate_load_profile(
     annual_consumption_kwh: float,
     load_type: str = "residential",
     year: int = 2020,
 ) -> pd.Series:
-    """
-               W   ?
+    """Generate a synthetic 8760-hour load profile.
 
-    Parameters
-    ----------
-    annual_consumption_kwh : float
-                  Wh ?
-    load_type : str
-               ?residential'      | 'commercial'      | 'industrial'      
-    year : int
-              
-    Returns
-    -------
-    pd.Series
-                    kW       ?DatetimeIndex
+    Args:
+        annual_consumption_kwh: Annual load, in kWh.
+        load_type: Load shape category: "residential", "commercial",
+            or "industrial".
+        year: Calendar year used to build the DatetimeIndex.
+
+    Returns:
+        Hourly load, in kW, indexed by DatetimeIndex.
     """
     snapshots = pd.date_range(f"{year}-01-01", periods=8760, freq="h")
     hour_of_day = np.arange(8760) % 24
@@ -363,23 +432,24 @@ def generate_load_profile(
             0.15,
         ).astype(float)
     else:
-        #     ?4         
+        #     ?4
         daily_pattern = np.ones(8760) * 0.85 + 0.15 * np.random.rand(8760)
 
-    #                      
+    #
     seasonal = 1.0 + 0.2 * np.cos(2 * np.pi * (day_of_year - 180) / 365)
     load_pattern = daily_pattern * seasonal
 
-    #             
+    #
     avg_kw = annual_consumption_kwh / 8760
     load_kw = load_pattern / load_pattern.mean() * avg_kw
 
     return pd.Series(load_kw, index=snapshots, name="load_kw")
 
 
-#                                                                                                                           
-# 2. PyPSA                
-#                                                                                                                           
+#
+# 2. PyPSA
+#
+
 
 class OffGridMicrogridSimulator:
     """Run an off-grid microgrid dispatch model with PyPSA."""
@@ -393,7 +463,7 @@ class OffGridMicrogridSimulator:
         load_profile: pd.Series,
         pv_profile: pd.Series,
         battery_efficiency: float = 0.95,
-        diesel_fuel_cost: float = 1.5,     #  ?kWh          ?
+        diesel_fuel_cost: float = 1.5,  #  ?kWh          ?
         diesel_min_load_pu: float = 0.25,
         diesel_committable: bool = False,
         diesel_start_up_cost: float = 0.25,
@@ -403,27 +473,34 @@ class OffGridMicrogridSimulator:
         battery_reserve_soc_pu: float = 0.15,
         verbose: bool = False,
     ):
-        """
-        Parameters
-        ----------
-        pv_capacity_kw : float
-                       W ?
-        battery_capacity_kwh : float
-                       Wh ?
-        battery_power_kw : float
-                           kW ?
-        diesel_capacity_kw : float
-                           kW   0             
-        load_profile : pd.Series
-                        kW       ?DatetimeIndex
-        pv_profile : pd.Series
-                           0~1       ?DatetimeIndex
-        battery_efficiency : float
-                            ?
-        diesel_fuel_cost : float
-                        /kWh ?
-        verbose : bool
-                        
+        """Configure the off-grid dispatch model.
+
+        Args:
+            pv_capacity_kw: Installed PV capacity, in kW.
+            battery_capacity_kwh: Battery energy capacity, in kWh.
+            battery_power_kw: Battery inverter power limit, in kW.
+            diesel_capacity_kw: Diesel generator capacity, in kW (0 to
+                disable the generator).
+            load_profile: Hourly load, in kW, indexed by DatetimeIndex.
+            pv_profile: Hourly PV capacity factor (0~1), indexed by
+                DatetimeIndex.
+            battery_efficiency: Round-trip battery efficiency.
+            diesel_fuel_cost: Diesel marginal cost, in $/kWh.
+            diesel_min_load_pu: Minimum generator loading fraction below
+                which it cannot run.
+            diesel_committable: Whether the generator has a commitment
+                (on/off) decision instead of running continuously.
+            diesel_start_up_cost: Cost incurred each time the generator
+                starts up.
+            diesel_shut_down_cost: Cost incurred each time the generator
+                shuts down.
+            diesel_min_up_time: Minimum consecutive hours the generator
+                must stay on once started.
+            diesel_min_down_time: Minimum consecutive hours the generator
+                must stay off once stopped.
+            battery_reserve_soc_pu: Minimum state-of-charge fraction the
+                battery must keep in reserve.
+            verbose: Whether to print PyPSA solver output.
         """
         self.pv_capacity_kw = pv_capacity_kw
         self.battery_capacity_kwh = battery_capacity_kwh
@@ -439,7 +516,9 @@ class OffGridMicrogridSimulator:
         self.diesel_shut_down_cost = diesel_shut_down_cost
         self.diesel_min_up_time = diesel_min_up_time
         self.diesel_min_down_time = diesel_min_down_time
-        self.battery_reserve_soc_pu = max(0.0, min(0.95, battery_reserve_soc_pu))
+        self.battery_reserve_soc_pu = max(
+            0.0, min(0.95, battery_reserve_soc_pu)
+        )
         self.verbose = verbose
 
         self.network: pypsa.Network | None = None
@@ -451,18 +530,19 @@ class OffGridMicrogridSimulator:
         snapshots = self.load_profile.index
         n.set_snapshots(snapshots)
 
-        #                                                                         
+        #
         n.add("Carrier", "AC", co2_emissions=0)
         n.add("Carrier", "solar", co2_emissions=0)
         n.add("Carrier", "battery", co2_emissions=0)
         n.add("Carrier", "diesel", co2_emissions=2.68)  # kgCO ?L  ?kgCO ?kWh
 
-        #                ?                                                  
-        n.add("Bus", "AC_bus", carrier="AC", v_nom=0.4)  # 400V    
+        #                ?
+        n.add("Bus", "AC_bus", carrier="AC", v_nom=0.4)  # 400V
 
-        #             ?                                                          
+        #             ?
         n.add(
-            "Generator", "PV",
+            "Generator",
+            "PV",
             bus="AC_bus",
             carrier="solar",
             p_nom=self.pv_capacity_kw,
@@ -472,10 +552,11 @@ class OffGridMicrogridSimulator:
             capital_cost=0,  #                    ?
         )
 
-        #                                                                           
+        #
         max_hours = self.battery_capacity_kwh / max(self.battery_power_kw, 1e-6)
         n.add(
-            "StorageUnit", "Battery",
+            "StorageUnit",
+            "Battery",
             bus="AC_bus",
             carrier="battery",
             p_nom=self.battery_power_kw,
@@ -484,52 +565,59 @@ class OffGridMicrogridSimulator:
             efficiency_dispatch=self.battery_efficiency,
             cyclic_state_of_charge=True,
             state_of_charge_initial=self.battery_capacity_kwh * 0.5,
-            state_of_charge_min=self.battery_capacity_kwh * self.battery_reserve_soc_pu,
+            state_of_charge_min=self.battery_capacity_kwh
+            * self.battery_reserve_soc_pu,
             capital_cost=0,
         )
 
-        #                                                               
+        #
         if self.diesel_capacity_kw > 0:
             diesel_kwargs = {
                 "bus": "AC_bus",
                 "carrier": "diesel",
                 "p_nom": self.diesel_capacity_kw,
-                "p_min_pu": self.diesel_min_load_pu if self.diesel_committable else 0.0,
+                "p_min_pu": self.diesel_min_load_pu
+                if self.diesel_committable
+                else 0.0,
                 "marginal_cost": self.diesel_fuel_cost,
                 "capital_cost": 0,
             }
             if self.diesel_committable:
-                diesel_kwargs.update({
-                    "committable": True,
-                    "start_up_cost": self.diesel_start_up_cost,
-                    "shut_down_cost": self.diesel_shut_down_cost,
-                    "min_up_time": self.diesel_min_up_time,
-                    "min_down_time": self.diesel_min_down_time,
-                })
+                diesel_kwargs.update(
+                    {
+                        "committable": True,
+                        "start_up_cost": self.diesel_start_up_cost,
+                        "shut_down_cost": self.diesel_shut_down_cost,
+                        "min_up_time": self.diesel_min_up_time,
+                        "min_down_time": self.diesel_min_down_time,
+                    }
+                )
 
             n.add("Generator", "Diesel", **diesel_kwargs)
 
-        #                                                                 
+        #
         n.add("Load", "Load", bus="AC_bus", p_set=self.load_profile)
 
-        #                                          
+        #
         n.add(
-            "Generator", "Curtailment",
+            "Generator",
+            "Curtailment",
             bus="AC_bus",
             carrier="AC",
             p_nom=self.pv_capacity_kw * 2,
-            p_min_pu=-1,  #    "   ?               
-            p_max_pu=0,   #          
-            marginal_cost=-0.001,  #                
+            p_min_pu=-1,  #    "   ?
+            p_max_pu=0,  #
+            marginal_cost=-0.001,  #
         )
 
-        #                                         
+        #
         n.add(
-            "Generator", "LoadShedding",
+            "Generator",
+            "LoadShedding",
             bus="AC_bus",
             carrier="AC",
             p_nom=self.load_profile.max() * 1.5,
-            marginal_cost=999,  #       
+            marginal_cost=999,  #
             capital_cost=0,
         )
 
@@ -545,17 +633,23 @@ class OffGridMicrogridSimulator:
 
         n = self.network
 
-        #               
-        status = n.optimize(solver_name=solver_name, solver_options={"output_flag": False})
+        #
+        status = n.optimize(
+            solver_name=solver_name, solver_options={"output_flag": False}
+        )
 
         if "optimal" not in str(status).lower() and status is not True:
             print(f" ?      ? {status}            ")
 
-        #                                                                    
+        #
         pv_gen_kwh = n.generators_t.p["PV"].sum()
         load_kwh = n.loads_t.p["Load"].sum()
         load_shed_kwh = n.generators_t.p.get("LoadShedding", pd.Series(0)).sum()
-        curtail_kwh = abs(n.generators_t.p.get("Curtailment", pd.Series(0)).clip(upper=0).sum())
+        curtail_kwh = abs(
+            n.generators_t.p.get("Curtailment", pd.Series(0))
+            .clip(upper=0)
+            .sum()
+        )
 
         diesel_kwh = 0.0
         diesel_hours = 0
@@ -571,31 +665,39 @@ class OffGridMicrogridSimulator:
                 and "Diesel" in n.generators_t.status.columns
                 and not n.generators_t.status.empty
             ):
-                diesel_status = n.generators_t.status["Diesel"].fillna(0.0).clip(lower=0.0)
+                diesel_status = (
+                    n.generators_t.status["Diesel"].fillna(0.0).clip(lower=0.0)
+                )
             else:
                 diesel_status = self._estimate_diesel_commitment(diesel_series)
 
             diesel_hours = int((diesel_status > 0.5).sum())
-            diesel_starts = int((diesel_status.diff().fillna(diesel_status.iloc[0]) > 0.5).sum())
+            diesel_starts = int(
+                (diesel_status.diff().fillna(diesel_status.iloc[0]) > 0.5).sum()
+            )
 
         battery_charge_kwh = n.storage_units_t.p_store["Battery"].sum()
         battery_discharge_kwh = n.storage_units_t.p_dispatch["Battery"].sum()
         soc_series = n.storage_units_t.state_of_charge["Battery"]
 
-        # PV production can exceed annual load when the system curtails surplus
-        # energy. For the user-facing solar share, count only utilized PV energy.
+        # PV production can exceed annual load when the system curtails
+        # surplus energy. For the user-facing solar share, count only
+        # utilized PV energy.
         pv_utilized_kwh = max(0.0, pv_gen_kwh - curtail_kwh)
         solar_fraction = min(1.0, pv_utilized_kwh / max(load_kwh, 1e-6))
-        loss_of_load = load_shed_kwh / max(load_kwh, 1e-6)   #       
-        curtailment_rate = curtail_kwh / max(pv_gen_kwh, 1e-6)  #     ?
+        loss_of_load = load_shed_kwh / max(load_kwh, 1e-6)
+        curtailment_rate = curtail_kwh / max(pv_gen_kwh, 1e-6)
 
-        #                             ?
-        hourly_deficit = n.generators_t.p.get("LoadShedding", pd.Series(0, index=n.snapshots))
+        # Longest run of consecutive days with any unmet load.
+        hourly_deficit = n.generators_t.p.get(
+            "LoadShedding", pd.Series(0, index=n.snapshots)
+        )
         daily_deficit = hourly_deficit.resample("D").sum()
-        max_continuous_deficit_days = self._max_continuous_deficit_days(daily_deficit)
+        max_continuous_deficit_days = self._max_continuous_deficit_days(
+            daily_deficit
+        )
 
         self.results = {
-            #         Wh/   
             "annual_pv_generation_kwh": round(pv_gen_kwh, 1),
             "annual_pv_utilized_kwh": round(pv_utilized_kwh, 1),
             "annual_load_kwh": round(load_kwh, 1),
@@ -604,20 +706,14 @@ class OffGridMicrogridSimulator:
             "annual_diesel_kwh": round(diesel_kwh, 1),
             "annual_battery_charge_kwh": round(battery_charge_kwh, 1),
             "annual_battery_discharge_kwh": round(battery_discharge_kwh, 1),
-
-            #       
-            "solar_fraction": round(solar_fraction * 100, 1),       #        ?%
-            "loss_of_load_rate": round(loss_of_load * 100, 3),      #        %
-            "curtailment_rate": round(curtailment_rate * 100, 1),   #     ?%
-            "diesel_run_hours": diesel_hours,                        #             ?
-            "diesel_start_count": diesel_starts,                     #             
-
-            #        ?
-            "max_autonomous_days": max_continuous_deficit_days,      #                   ?
-            "battery_avg_soc": round(soc_series.mean(), 1),          #            kWh ?
+            "solar_fraction": round(solar_fraction * 100, 1),  # %
+            "loss_of_load_rate": round(loss_of_load * 100, 3),  # %
+            "curtailment_rate": round(curtailment_rate * 100, 1),  # %
+            "diesel_run_hours": diesel_hours,
+            "diesel_start_count": diesel_starts,
+            "max_autonomous_days": max_continuous_deficit_days,
+            "battery_avg_soc": round(soc_series.mean(), 1),  # kWh
             "battery_min_soc": round(soc_series.min(), 1),
-
-            #                   
             "_soc_series": soc_series,
             "_load_shed_series": hourly_deficit,
             "_pv_series": n.generators_t.p["PV"],
@@ -630,7 +726,7 @@ class OffGridMicrogridSimulator:
     @staticmethod
     def _max_continuous_deficit_days(daily_deficit: pd.Series) -> int:
         """Count the longest streak of days with almost no deficit."""
-        #        ?    ?      
+        #        ?    ?
         no_deficit = (daily_deficit < 0.01).astype(int)
         max_streak = 0
         current_streak = 0
@@ -642,12 +738,13 @@ class OffGridMicrogridSimulator:
                 current_streak = 0
         return max_streak
 
-    def _estimate_diesel_commitment(self, diesel_series: pd.Series) -> pd.Series:
-        """
-            ?LP                            ?
+    def _estimate_diesel_commitment(
+        self, diesel_series: pd.Series
+    ) -> pd.Series:
+        """?LP                            ?
 
             ?
-        -                                         
+        -
         -          ?                     ?
         """
         if diesel_series.empty or self.diesel_capacity_kw <= 0:
@@ -658,12 +755,18 @@ class OffGridMicrogridSimulator:
         threshold_kw = max(0.01, self.diesel_capacity_kw * 0.01)
         status = diesel_series.ge(threshold_kw).astype(float)
 
-        status = self._enforce_min_state_duration(status, 1.0, max(int(self.diesel_min_up_time), 1))
-        status = self._enforce_min_state_duration(status, 0.0, max(int(self.diesel_min_down_time), 1))
+        status = self._enforce_min_state_duration(
+            status, 1.0, max(int(self.diesel_min_up_time), 1)
+        )
+        status = self._enforce_min_state_duration(
+            status, 0.0, max(int(self.diesel_min_down_time), 1)
+        )
         return status.astype(float)
 
     @staticmethod
-    def _enforce_min_state_duration(status: pd.Series, state_value: float, min_duration: int) -> pd.Series:
+    def _enforce_min_state_duration(
+        status: pd.Series, state_value: float, min_duration: int
+    ) -> pd.Series:
         if min_duration <= 1 or status.empty:
             return status
 
@@ -673,10 +776,7 @@ class OffGridMicrogridSimulator:
         target = 1 if state_value >= 0.5 else 0
 
         while i < n:
-            j = i
-            while j < n and arr[j] == arr[i]:
-                j += 1
-
+            j = OffGridMicrogridSimulator._state_run_end(arr, i)
             run_length = j - i
             if arr[i] == target and run_length < min_duration:
                 arr[i:j] = 1 - target
@@ -684,6 +784,13 @@ class OffGridMicrogridSimulator:
             i = j
 
         return pd.Series(arr.astype(float), index=status.index)
+
+    @staticmethod
+    def _state_run_end(values: np.ndarray, start: int) -> int:
+        end = start
+        while end < len(values) and values[end] == values[start]:
+            end += 1
+        return end
 
 
 class MicrogridOptimizer:
@@ -695,10 +802,21 @@ class MicrogridOptimizer:
         load_profile: pd.Series,
         pv_profile: pd.Series,
         diesel_capacity_kw: float = 0,
-        battery_power_cost_per_kw: float = 2000,    #  ?kW      
-        battery_energy_cost_per_kwh: float = 1500,  #  ?kWh      
-        max_loss_of_load: float = 0.01,             #             ?1%
+        battery_power_cost_per_kw: float = 2000,  # $/kW
+        battery_energy_cost_per_kwh: float = 1500,  # $/kWh
+        max_loss_of_load: float = 0.01,  # e.g. 0.01 = 1%
     ):
+        """Configure the battery-sizing optimizer.
+
+        Args:
+            pv_capacity_kw: Installed PV capacity, in kW.
+            load_profile: Hourly load, in kW.
+            pv_profile: Hourly PV capacity factor (0~1).
+            diesel_capacity_kw: Diesel generator capacity, in kW.
+            battery_power_cost_per_kw: Battery power cost, in $/kW.
+            battery_energy_cost_per_kwh: Battery energy cost, in $/kWh.
+            max_loss_of_load: Maximum acceptable loss-of-load fraction.
+        """
         self.pv_capacity_kw = pv_capacity_kw
         self.load_profile = load_profile
         self.pv_profile = pv_profile
@@ -708,13 +826,10 @@ class MicrogridOptimizer:
         self.max_loss_of_load = max_loss_of_load
 
     def optimize(self, solver_name: str = "highs") -> dict:
-        """
-            PyPSA                             ?
+        """Solve the optimal battery power/energy sizing via PyPSA.
 
-        Returns
-        -------
-        dict
-                                         ?
+        Returns:
+            A dict with the optimized battery sizing and run metrics.
         """
         n = pypsa.Network()
         n.set_snapshots(self.load_profile.index)
@@ -726,44 +841,76 @@ class MicrogridOptimizer:
 
         n.add("Bus", "AC_bus", carrier="AC")
 
-        #             
-        n.add("Generator", "PV", bus="AC_bus", carrier="solar",
-              p_nom=self.pv_capacity_kw, p_max_pu=self.pv_profile, marginal_cost=0)
+        #
+        n.add(
+            "Generator",
+            "PV",
+            bus="AC_bus",
+            carrier="solar",
+            p_nom=self.pv_capacity_kw,
+            p_max_pu=self.pv_profile,
+            marginal_cost=0,
+        )
 
         #              ?
         if self.diesel_capacity_kw > 0:
-            n.add("Generator", "Diesel", bus="AC_bus", carrier="diesel",
-                  p_nom=self.diesel_capacity_kw, p_min_pu=0.0, marginal_cost=1.5)
+            n.add(
+                "Generator",
+                "Diesel",
+                bus="AC_bus",
+                carrier="diesel",
+                p_nom=self.diesel_capacity_kw,
+                p_min_pu=0.0,
+                marginal_cost=1.5,
+            )
 
-        #                  ?             StorageUnit  ?Store    
+        #                  ?             StorageUnit  ?Store
         n.add(
-            "StorageUnit", "Battery",
+            "StorageUnit",
+            "Battery",
             bus="AC_bus",
             carrier="battery",
-            p_nom_extendable=True,       #           ?
+            p_nom_extendable=True,  #           ?
             p_nom_min=0,
             p_nom_max=self.pv_capacity_kw * 2,
-            max_hours=8,                 #    ?8h           ?
+            max_hours=8,  #    ?8h           ?
             efficiency_store=0.95,
             efficiency_dispatch=0.95,
             cyclic_state_of_charge=True,
-            capital_cost=self.battery_power_cost_per_kw + self.battery_energy_cost_per_kwh * 8,
+            capital_cost=self.battery_power_cost_per_kw
+            + self.battery_energy_cost_per_kwh * 8,
         )
 
-        #    
+        #
         n.add("Load", "Load", bus="AC_bus", p_set=self.load_profile)
 
         #                 ?
-        penalty = 10000  #  ?kWh    
-        n.add("Generator", "LoadShedding", bus="AC_bus", carrier="AC",
-              p_nom=self.load_profile.max() * 2, marginal_cost=penalty)
+        penalty = 10000  #  ?kWh
+        n.add(
+            "Generator",
+            "LoadShedding",
+            bus="AC_bus",
+            carrier="AC",
+            p_nom=self.load_profile.max() * 2,
+            marginal_cost=penalty,
+        )
 
         #           sink ?
-        n.add("Generator", "Curtailment", bus="AC_bus", carrier="AC",
-              p_nom=self.pv_capacity_kw * 2, p_min_pu=-1, p_max_pu=0, marginal_cost=-0.001)
+        n.add(
+            "Generator",
+            "Curtailment",
+            bus="AC_bus",
+            carrier="AC",
+            p_nom=self.pv_capacity_kw * 2,
+            p_min_pu=-1,
+            p_max_pu=0,
+            marginal_cost=-0.001,
+        )
 
-        #      
-        n.optimize(solver_name=solver_name, solver_options={"output_flag": False})
+        #
+        n.optimize(
+            solver_name=solver_name, solver_options={"output_flag": False}
+        )
 
         opt_battery_kw = n.storage_units.at["Battery", "p_nom_opt"]
         opt_battery_kwh = opt_battery_kw * 8
@@ -771,13 +918,16 @@ class MicrogridOptimizer:
         return {
             "optimal_battery_power_kw": round(opt_battery_kw, 1),
             "optimal_battery_energy_kwh": round(opt_battery_kwh, 1),
-            "annual_load_shed_kwh": round(n.generators_t.p["LoadShedding"].sum(), 1),
+            "annual_load_shed_kwh": round(
+                n.generators_t.p["LoadShedding"].sum(), 1
+            ),
         }
 
 
-#                                                                                                                           
+#
 # 3.                       generate_load_profile ?
-#                                                                                                                           
+#
+
 
 def generate_load_profile_from_current_spec(
     voltage_v: float,
@@ -787,16 +937,16 @@ def generate_load_profile_from_current_spec(
     annual_kwh_override: float = None,
 ) -> pd.Series:
     """Build an hourly load profile from a current schedule."""
-    snapshots   = pd.date_range(f"{year}-01-01", periods=8760, freq="h")
+    snapshots = pd.date_range(f"{year}-01-01", periods=8760, freq="h")
     hour_of_day = np.arange(8760) % 24
-    load_kw     = np.zeros(8760)
+    load_kw = np.zeros(8760)
 
     for start_h, end_h, current_a in current_schedule:
         power_kw = voltage_v * current_a * power_factor / 1000.0
         s = int(start_h) % 24
 
         if end_h <= 24:
-            #       
+            #
             e = int(end_h) % 24 if int(end_h) % 24 != 0 else 24
             mask = (hour_of_day >= s) & (hour_of_day < e)
         else:
@@ -807,16 +957,17 @@ def generate_load_profile_from_current_spec(
         load_kw[mask] = power_kw
 
     if annual_kwh_override is not None:
-        base_kwh = load_kw.sum()   # 1h   kW = kWh
+        base_kwh = load_kw.sum()  # 1h   kW = kWh
         if base_kwh > 0:
             load_kw = load_kw * (annual_kwh_override / base_kwh)
 
     return pd.Series(load_kw, index=snapshots, name="load_kw")
 
 
-#                                                                                                                           
+#
 # 4.                 HOMER Pro A       ?
-#                                                                                                                           
+#
+
 
 class DieselOnlySimulator:
     """Simulate the diesel-only reference case with PyPSA."""
@@ -830,26 +981,24 @@ class DieselOnlySimulator:
         diesel_kwh_per_liter: float = 3.2,
         verbose: bool = False,
     ):
+        """Configure the diesel-only reference model.
+
+        Args:
+            diesel_capacity_kw: Diesel generator capacity, in kW.
+            load_profile: Hourly load, in kW.
+            min_load_pu: Minimum generator loading fraction (e.g. 0.3
+                for a 30% floor) below which it cannot run.
+            diesel_fuel_cost_usd_per_kwh: Marginal fuel cost, in $/kWh
+                (derived from $/L and kWh/L).
+            diesel_kwh_per_liter: Generator fuel efficiency, in kWh/L.
+            verbose: Whether to print PyPSA solver output.
         """
-        Parameters
-        ----------
-        diesel_capacity_kw : float
-                        kW ?
-        load_profile : pd.Series
-                        kW ?
-        min_load_pu : float
-                                 ?0.3 ?0% ?
-        diesel_fuel_cost_usd_per_kwh : float
-                         ?kWh     ?     ?$/L)         (kWh/L)
-        diesel_kwh_per_liter : float
-                       Wh/L       kWh  ? ?   
-        """
-        self.diesel_capacity_kw     = diesel_capacity_kw
-        self.load_profile           = load_profile
-        self.min_load_pu            = min_load_pu
-        self.diesel_fuel_cost       = diesel_fuel_cost_usd_per_kwh
-        self.diesel_kwh_per_liter   = diesel_kwh_per_liter
-        self.verbose                = verbose
+        self.diesel_capacity_kw = diesel_capacity_kw
+        self.load_profile = load_profile
+        self.min_load_pu = min_load_pu
+        self.diesel_fuel_cost = diesel_fuel_cost_usd_per_kwh
+        self.diesel_kwh_per_liter = diesel_kwh_per_liter
+        self.verbose = verbose
         self.network: pypsa.Network | None = None
         self.results: dict = {}
 
@@ -858,14 +1007,15 @@ class DieselOnlySimulator:
         n = pypsa.Network()
         n.set_snapshots(self.load_profile.index)
 
-        n.add("Carrier", "AC",     co2_emissions=0)
+        n.add("Carrier", "AC", co2_emissions=0)
         n.add("Carrier", "diesel", co2_emissions=2.68)
 
         n.add("Bus", "AC_bus", carrier="AC", v_nom=0.4)
 
-        #                                                          
+        #
         n.add(
-            "Generator", "Diesel",
+            "Generator",
+            "Diesel",
             bus="AC_bus",
             carrier="diesel",
             p_nom=self.diesel_capacity_kw,
@@ -875,25 +1025,27 @@ class DieselOnlySimulator:
             capital_cost=0,
         )
 
-        #                                                                                              
+        #
         n.add("Load", "Load", bus="AC_bus", p_set=self.load_profile)
 
-        #                                                  
+        #
         #     ?< diesel_min_load           ?diesel_min_load ?
         #        ?DumpLoad                ?
         n.add(
-            "Generator", "DumpLoad",
+            "Generator",
+            "DumpLoad",
             bus="AC_bus",
             carrier="AC",
             p_nom=self.diesel_capacity_kw,
-            p_min_pu=-1,   #                    ?
-            p_max_pu=0,    #        ?
+            p_min_pu=-1,  #                    ?
+            p_max_pu=0,  #        ?
             marginal_cost=-0.001,
         )
 
-        #                                                        
+        #
         n.add(
-            "Generator", "LoadShedding",
+            "Generator",
+            "LoadShedding",
             bus="AC_bus",
             carrier="AC",
             p_nom=self.load_profile.max() * 1.5,
@@ -907,46 +1059,49 @@ class DieselOnlySimulator:
         return n
 
     def run_simulation(self, solver_name: str = "highs") -> dict:
-        """
-                      ?
+        """?
 
-        Returns
+        Returns:
         -------
         dict
             annual_diesel_kwh_generated :                    ?
             annual_load_kwh             :       ?
             annual_dump_kwh             :                       ?
-            annual_load_shed_kwh        :                      
+            annual_load_shed_kwh        :
             diesel_run_hours            :             8760 ?
             diesel_liters_per_year      :           ?
-            effective_load_efficiency   :           =    /   
+            effective_load_efficiency   :           =    /
         """
         if self.network is None:
             self.build_network()
 
         n = self.network
-        status = n.optimize(solver_name=solver_name, solver_options={"output_flag": False})
+        status = n.optimize(
+            solver_name=solver_name, solver_options={"output_flag": False}
+        )
         if "optimal" not in str(status).lower() and status is not True:
             print(f"   ?      ? {status}")
 
-        diesel_series  = n.generators_t.p["Diesel"]
-        diesel_kwh     = diesel_series.sum()
-        diesel_hours   = int((diesel_series > 0.01).sum())
-        dump_kwh       = abs(
+        diesel_series = n.generators_t.p["Diesel"]
+        diesel_kwh = diesel_series.sum()
+        diesel_hours = int((diesel_series > 0.01).sum())
+        dump_kwh = abs(
             n.generators_t.p.get("DumpLoad", pd.Series(0)).clip(upper=0).sum()
         )
-        load_shed_kwh  = n.generators_t.p.get("LoadShedding", pd.Series(0)).sum()
-        load_kwh       = n.loads_t.p["Load"].sum()
-        diesel_liters  = diesel_kwh / self.diesel_kwh_per_liter
+        load_shed_kwh = n.generators_t.p.get("LoadShedding", pd.Series(0)).sum()
+        load_kwh = n.loads_t.p["Load"].sum()
+        diesel_liters = diesel_kwh / self.diesel_kwh_per_liter
 
         self.results = {
             "annual_diesel_kwh_generated": round(diesel_kwh, 1),
-            "annual_load_kwh":             round(load_kwh, 1),
-            "annual_dump_kwh":             round(dump_kwh, 1),
-            "annual_load_shed_kwh":        round(load_shed_kwh, 1),
-            "diesel_run_hours":            diesel_hours,
-            "diesel_liters_per_year":      round(diesel_liters, 0),
-            "effective_load_efficiency":   round(load_kwh / max(diesel_kwh, 1e-6), 3),
+            "annual_load_kwh": round(load_kwh, 1),
+            "annual_dump_kwh": round(dump_kwh, 1),
+            "annual_load_shed_kwh": round(load_shed_kwh, 1),
+            "diesel_run_hours": diesel_hours,
+            "diesel_liters_per_year": round(diesel_liters, 0),
+            "effective_load_efficiency": round(
+                load_kwh / max(diesel_kwh, 1e-6), 3
+            ),
         }
 
         if self.verbose:
@@ -958,6 +1113,3 @@ class DieselOnlySimulator:
             print(f"run hours:         {diesel_hours:>10,} h/year")
 
         return self.results
-
-
-

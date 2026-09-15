@@ -5,14 +5,14 @@ export type TranslationDict = Record<string, { zh: string; en: string }>;
 const dict: TranslationDict = {
   'lang.toggle': { zh: 'EN', en: '中文' },
 
-  'welcome.slogan': { zh: 'Microgrid Solutions', en: 'Microgrid Solutions' },
-  'welcome.brand': { zh: 'MicroGrid', en: 'MicroGrid' },
+  'welcome.slogan': { zh: 'Energy For Future', en: 'Energy For Future' },
+  'welcome.brand': { zh: 'VoltageEnergy', en: 'VoltageEnergy' },
   'welcome.subtitle': { zh: '能源科技', en: 'Energy Technology' },
   'welcome.prefix': { zh: '体验', en: 'Experience' },
-  'welcome.title': { zh: '微电网配置系统', en: 'Microgrid Configuration System' },
-  'welcome.desc1': { zh: '本微电网配置系统是一个简单、标准化、经过验证且可扩展的解决方案，旨在加速微电网部署，实现更高的韧性、能源成本优化和可持续性。', en: 'This Microgrid Configuration System is a simple, standardized, proven and scalable solution designed to accelerate microgrid deployment for greater resilience, energy cost optimization and sustainability.' },
-  'welcome.desc2': { zh: '通过此配置工具，体验如何以速度和简洁性交付微电网解决方案。', en: 'Use this configuration tool to experience how microgrid solutions can be delivered with speed and simplicity.' },
-  'welcome.cta': { zh: '开始体验微电网配置系统', en: 'Start Microgrid Configuration' },
+  'welcome.title': { zh: 'VoltageEnergy 微电网配置系统', en: 'VoltageEnergy Microgrid Configuration System' },
+  'welcome.desc1': { zh: 'VoltageEnergy 微电网配置系统是一个简单、标准化、经过验证且可扩展的解决方案，旨在加速微电网部署，实现更高的韧性、能源成本优化和可持续性。', en: 'The VoltageEnergy Microgrid Configuration System is a simple, standardized, proven and scalable solution designed to accelerate microgrid deployment for greater resilience, energy cost optimization and sustainability.' },
+  'welcome.desc2': { zh: '通过此配置工具，体验 VoltageEnergy 如何以速度和简洁性交付微电网解决方案。', en: 'Use this configuration tool to experience how VoltageEnergy delivers microgrid solutions with speed and simplicity.' },
+  'welcome.cta': { zh: '开始体验 VoltageEnergy 微电网配置系统', en: 'Start VoltageEnergy Microgrid Configuration' },
 
   'nav.standard': { zh: '标准化产品', en: 'Standard Products' },
   'nav.std.small': { zh: '小型光储柴一体', en: 'Small PV-Storage-Diesel' },

@@ -1,11 +1,9 @@
-﻿"""
-routers/products.py - GET /api/products  &  GET /api/solar-hours  &  GET /api/health
-"""
+"""路由：GET /api/products、GET /api/solar-hours、GET /api/health."""
+
 from __future__ import annotations
 
 import math
 from functools import lru_cache
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter
@@ -20,12 +18,16 @@ _SYSTEM_DERATE = 0.75
 
 @router.get("/health")
 def health():
+    """Return a simple liveness/version check."""
     return {"status": "ok", "version": "2.0.0"}
 
 
 @router.get("/products")
 def get_products():
-    """Return the products catalog from PostgreSQL, falling back to products.yaml."""
+    """Return the products catalog.
+
+    Reads from PostgreSQL, falling back to products.yaml.
+    """
     try:
         from app.db.database import ensure_db_seeded, get_connection
         from app.db.queries import get_all_products
@@ -37,7 +39,10 @@ def get_products():
         finally:
             conn.close()
     except Exception as exc:
-        print(f"[db] PostgreSQL unavailable for /api/products; using products.yaml fallback: {exc}")
+        print(
+            "[db] PostgreSQL unavailable for /api/products; "
+            f"using products.yaml fallback: {exc}"
+        )
         from app.db.yaml_store import get_all_products as get_yaml_products
 
         return get_yaml_products()
@@ -69,7 +74,8 @@ def _estimate_solar_hours_fallback(lat: float, lon: float) -> dict:
         "annual_kwh_per_m2": annual_kwh_m2,
         "annual_eff_hours": annual_eff_hours,
         "climate_zone": _climate_zone(lat),
-        "note": "Fallback engineering estimate based on latitude because NASA POWER data was unavailable.",
+        "note": "Fallback engineering estimate based on latitude because NASA "
+        "POWER data was unavailable.",
         "source": "fallback_latitude_formula",
         "data_year": None,
     }
@@ -108,7 +114,7 @@ def _fetch_nasa_power_solar_hours(lat: float, lon: float, year: int) -> dict:
             value = float(raw_value)
         except (TypeError, ValueError):
             continue
-        # NASA POWER uses negative sentinels like -999. Ignore non-physical values.
+        # NASA POWER uses negative sentinels like -999; ignore those.
         if value >= 0:
             daily_values.append(value)
 
@@ -130,7 +136,8 @@ def _fetch_nasa_power_solar_hours(lat: float, lon: float, year: int) -> dict:
         "climate_zone": _climate_zone(lat),
         "note": (
             f"Based on NASA POWER daily ALLSKY_SFC_SW_DWN data for {year}. "
-            f"Annual effective hours apply a {_SYSTEM_DERATE:.0%} system derate."
+            f"Annual effective hours apply a {_SYSTEM_DERATE:.0%} "
+            "system derate."
         ),
         "source": "nasa_power_daily",
         "data_year": year,
@@ -139,9 +146,13 @@ def _fetch_nasa_power_solar_hours(lat: float, lon: float, year: int) -> dict:
 
 @router.get("/solar-hours")
 def get_solar_hours(lat: float, lon: float = 0.0):
-    """Get solar resource metrics, preferring NASA POWER daily irradiance data."""
+    """Get solar resource metrics.
+
+    Prefers NASA POWER daily irradiance data.
+    """
     try:
-        return _fetch_nasa_power_solar_hours(round(lat, 4), round(lon, 4), _SOLAR_DATA_YEAR)
+        return _fetch_nasa_power_solar_hours(
+            round(lat, 4), round(lon, 4), _SOLAR_DATA_YEAR
+        )
     except Exception:
         return _estimate_solar_hours_fallback(lat, lon)
-

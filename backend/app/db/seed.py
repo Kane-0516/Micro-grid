@@ -1,6 +1,5 @@
-"""
-Seed the PostgreSQL product catalog from products.yaml.
-"""
+"""Seed the PostgreSQL product catalog from products.yaml."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,6 +11,7 @@ from psycopg.types.json import Jsonb
 
 
 def seed_from_yaml(yaml_path: str, conn: Connection) -> None:
+    """Populate every catalog table in PostgreSQL from a products.yaml file."""
     with open(yaml_path, "r", encoding="utf-8") as f:
         data: dict[str, Any] = yaml.safe_load(f)
 
@@ -31,21 +31,31 @@ def _deep_merge_defaults(default_value: Any, current_value: Any) -> Any:
     if isinstance(default_value, dict) and isinstance(current_value, dict):
         merged = dict(current_value)
         for key, value in default_value.items():
-            merged[key] = _deep_merge_defaults(value, merged.get(key)) if key in merged else value
+            merged[key] = (
+                _deep_merge_defaults(value, merged.get(key))
+                if key in merged
+                else value
+            )
         return merged
     return default_value if current_value is None else current_value
 
 
-def _fetch_json_value(conn: Connection, table_name: str, value_column: str, key: str) -> Any:
+def _fetch_json_value(
+    conn: Connection, table_name: str, value_column: str, key: str
+) -> Any:
     with conn.cursor() as cur:
-        cur.execute(f"SELECT {value_column} FROM {table_name} WHERE key = %s", (key,))
+        cur.execute(
+            f"SELECT {value_column} FROM {table_name} WHERE key = %s", (key,)
+        )
         row = cur.fetchone()
         if not row:
             return None
         return row[value_column] if isinstance(row, dict) else row[0]
 
 
-def _upsert_json_value(conn: Connection, table_name: str, value_column: str, key: str, value: Any) -> None:
+def _upsert_json_value(
+    conn: Connection, table_name: str, value_column: str, key: str, value: Any
+) -> None:
     with conn.cursor() as cur:
         cur.execute(
             f"""
@@ -59,7 +69,10 @@ def _upsert_json_value(conn: Connection, table_name: str, value_column: str, key
 
 
 def merge_catalog_defaults_from_yaml(yaml_path: str, conn: Connection) -> None:
-    """Backfill new catalog setting fields without overwriting user-edited values."""
+    """Backfill new catalog setting fields.
+
+    Does not overwrite fields the user has already edited.
+    """
     with open(yaml_path, "r", encoding="utf-8") as f:
         data: dict[str, Any] = yaml.safe_load(f)
 
@@ -70,25 +83,50 @@ def merge_catalog_defaults_from_yaml(yaml_path: str, conn: Connection) -> None:
     dg_sec = data.get("diesel_generators", {})
     meta_defaults = {
         "pv_panels.default_model": pv_sec.get("default_model", "655W"),
-        "bracket_systems.default_model": br_sec.get("default_model", "standard_32"),
+        "bracket_systems.default_model": br_sec.get(
+            "default_model", "standard_32"
+        ),
         "bracket_systems.spacing_m": float(br_sec.get("spacing_m", 3.048)),
-        "battery_packs.default_model": bat_sec.get("default_model", "LFP-16kWh"),
-        "battery_packs.price_usd_per_kwh_fallback": float(bat_sec.get("price_usd_per_kwh_fallback", 300.0)),
+        "battery_packs.default_model": bat_sec.get(
+            "default_model", "LFP-16kWh"
+        ),
+        "battery_packs.price_usd_per_kwh_fallback": float(
+            bat_sec.get("price_usd_per_kwh_fallback", 300.0)
+        ),
         "inverters.voltage_default_map": inv_sec.get("voltage_default_map", {}),
-        "diesel_generators.price_usd_per_kw": float(dg_sec.get("price_usd_per_kw", 1125.0)),
+        "diesel_generators.price_usd_per_kw": float(
+            dg_sec.get("price_usd_per_kw", 1125.0)
+        ),
         "economic_defaults": data.get("economic_defaults", {}),
     }
-    blob_defaults = {key: data.get(key, {}) for key in ["home_bg_defaults", "site_layout", "simulation_defaults", "accessories", "pricing"]}
+    blob_defaults = {
+        key: data.get(key, {})
+        for key in [
+            "home_bg_defaults",
+            "site_layout",
+            "simulation_defaults",
+            "accessories",
+            "pricing",
+        ]
+    }
 
     for key, default_value in meta_defaults.items():
-        current_value = _fetch_json_value(conn, "catalog_meta", "value_json", key)
+        current_value = _fetch_json_value(
+            conn, "catalog_meta", "value_json", key
+        )
         merged_value = _deep_merge_defaults(default_value, current_value)
-        _upsert_json_value(conn, "catalog_meta", "value_json", key, merged_value)
+        _upsert_json_value(
+            conn, "catalog_meta", "value_json", key, merged_value
+        )
 
     for key, default_value in blob_defaults.items():
-        current_value = _fetch_json_value(conn, "catalog_blobs", "json_value", key)
+        current_value = _fetch_json_value(
+            conn, "catalog_blobs", "json_value", key
+        )
         merged_value = _deep_merge_defaults(default_value, current_value)
-        _upsert_json_value(conn, "catalog_blobs", "json_value", key, merged_value)
+        _upsert_json_value(
+            conn, "catalog_blobs", "json_value", key, merged_value
+        )
 
     conn.commit()
 
@@ -121,8 +159,9 @@ def _seed_pv_panels(data: dict, conn: Connection) -> None:
         cur.executemany(
             """
             INSERT INTO pv_panels (
-                model, display_name, display_name_en, display_name_zh, watts,
-                price_usd_per_wp, efficiency_pct, temp_coeff_pct_per_c, length_mm, width_mm, description
+                model, display_name, display_name_en, display_name_zh,
+                watts, price_usd_per_wp, efficiency_pct,
+                temp_coeff_pct_per_c, length_mm, width_mm, description
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             rows,
@@ -150,8 +189,9 @@ def _seed_bracket_systems(data: dict, conn: Connection) -> None:
         cur.executemany(
             """
             INSERT INTO bracket_systems (
-                model, display_name, display_name_en, display_name_zh, panels_per_set,
-                area_m2, footprint_length_m, footprint_width_m, description
+                model, display_name, display_name_en, display_name_zh,
+                panels_per_set, area_m2, footprint_length_m,
+                footprint_width_m, description
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             rows,
@@ -180,8 +220,9 @@ def _seed_battery_packs(data: dict, conn: Connection) -> None:
         cur.executemany(
             """
             INSERT INTO battery_packs (
-                model, display_name, display_name_en, display_name_zh, capacity_kwh,
-                price_usd, voltage_v, cycle_life, depth_of_discharge_pct, description
+                model, display_name, display_name_en, display_name_zh,
+                capacity_kwh, price_usd, voltage_v, cycle_life,
+                depth_of_discharge_pct, description
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             rows,
@@ -282,7 +323,8 @@ def _seed_standard_packages(data: dict, conn: Connection) -> None:
     rows = [(pkg_id, Jsonb(pkg_data)) for pkg_id, pkg_data in packages.items()]
     with conn.cursor() as cur:
         cur.executemany(
-            "INSERT INTO standard_packages (package_id, data_json) VALUES (%s, %s)",
+            "INSERT INTO standard_packages (package_id, data_json) VALUES (%s, "
+            "%s)",
             rows,
         )
 
@@ -296,12 +338,30 @@ def _seed_catalog_meta(data: dict, conn: Connection) -> None:
     dg_sec = data.get("diesel_generators", {})
     rows = [
         ("pv_panels.default_model", Jsonb(pv_sec.get("default_model", "655W"))),
-        ("bracket_systems.default_model", Jsonb(br_sec.get("default_model", "standard_32"))),
-        ("bracket_systems.spacing_m", Jsonb(float(br_sec.get("spacing_m", 3.048)))),
-        ("battery_packs.default_model", Jsonb(bat_sec.get("default_model", "LFP-16kWh"))),
-        ("battery_packs.price_usd_per_kwh_fallback", Jsonb(float(bat_sec.get("price_usd_per_kwh_fallback", 300.0)))),
-        ("inverters.voltage_default_map", Jsonb(inv_sec.get("voltage_default_map", {}))),
-        ("diesel_generators.price_usd_per_kw", Jsonb(float(dg_sec.get("price_usd_per_kw", 1125.0)))),
+        (
+            "bracket_systems.default_model",
+            Jsonb(br_sec.get("default_model", "standard_32")),
+        ),
+        (
+            "bracket_systems.spacing_m",
+            Jsonb(float(br_sec.get("spacing_m", 3.048))),
+        ),
+        (
+            "battery_packs.default_model",
+            Jsonb(bat_sec.get("default_model", "LFP-16kWh")),
+        ),
+        (
+            "battery_packs.price_usd_per_kwh_fallback",
+            Jsonb(float(bat_sec.get("price_usd_per_kwh_fallback", 300.0))),
+        ),
+        (
+            "inverters.voltage_default_map",
+            Jsonb(inv_sec.get("voltage_default_map", {})),
+        ),
+        (
+            "diesel_generators.price_usd_per_kw",
+            Jsonb(float(dg_sec.get("price_usd_per_kw", 1125.0))),
+        ),
         ("economic_defaults", Jsonb(data.get("economic_defaults", {}))),
     ]
     with conn.cursor() as cur:
@@ -313,7 +373,13 @@ def _seed_catalog_meta(data: dict, conn: Connection) -> None:
 
 def _seed_catalog_blobs(data: dict, conn: Connection) -> None:
     _truncate(conn, "catalog_blobs")
-    keys = ["home_bg_defaults", "site_layout", "simulation_defaults", "accessories", "pricing"]
+    keys = [
+        "home_bg_defaults",
+        "site_layout",
+        "simulation_defaults",
+        "accessories",
+        "pricing",
+    ]
     rows = [(key, Jsonb(data.get(key, {}))) for key in keys]
     with conn.cursor() as cur:
         cur.executemany(
@@ -323,8 +389,8 @@ def _seed_catalog_blobs(data: dict, conn: Connection) -> None:
 
 
 if __name__ == "__main__":
-    from app.db.database import create_schema, get_connection
     from app.core.config import PRODUCTS_YAML
+    from app.db.database import create_schema, get_connection
 
     yaml_path = Path(__file__).resolve().parents[2] / "products.yaml"
     if PRODUCTS_YAML.exists():

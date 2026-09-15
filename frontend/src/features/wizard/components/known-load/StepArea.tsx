@@ -69,6 +69,104 @@ function getInputWidth(value: string, minimumChars = 14): string {
   return `${Math.max(minimumChars, value.trim().length + 2)}ch`;
 }
 
+function UnusableAreaNote({
+  totalAreaM2, usableAreaM2, effectiveAreaPerSet, maxSets,
+  bracketLengthM, bracketWidthM, bracketLengthFt, bracketWidthFt, lang,
+}: {
+  totalAreaM2: number;
+  usableAreaM2: number;
+  effectiveAreaPerSet: number;
+  maxSets: number;
+  bracketLengthM: number;
+  bracketWidthM: number;
+  bracketLengthFt: string;
+  bracketWidthFt: string;
+  lang: 'zh' | 'en';
+}) {
+  if (totalAreaM2 <= usableAreaM2 || usableAreaM2 <= 0) return null;
+  const unusableDisplay = formatAreaDualFtFirst(totalAreaM2 - usableAreaM2, lang, 2).combined;
+  const effectiveFt2 = sqmToSqft(effectiveAreaPerSet).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const effectiveM2 = effectiveAreaPerSet.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return (
+    <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.85rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', fontSize: '0.78rem', color: '#92400e', lineHeight: 1.6 }}>
+      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>{lang === 'en' ? `Unusable area: ${unusableDisplay}` : `不可用面积：${unusableDisplay}`}</div>
+      <div style={{ marginBottom: '0.2rem' }}>
+        {lang === 'en' ? 'This remaining area is edge/corner space that cannot fit another bracket set because:' : '该剩余面积为边角空间，无法再安装更多支架，原因如下：'}
+      </div>
+      <div>(1) {lang === 'en'
+        ? `Each bracket set occupies ${effectiveFt2} ft² (${effectiveM2} m²) including the ${bracketLengthFt} ft × ${bracketWidthFt} ft bracket body and surrounding maintenance spacing.`
+        : `每套支架有效占地 ${effectiveFt2} ft²（${effectiveM2} m²），包含 ${bracketLengthM} m × ${bracketWidthM} m 支架本体及周围维护间距。`}
+      </div>
+      <div>(2) {lang === 'en'
+        ? `After placing ${maxSets} set${maxSets > 1 ? 's' : ''}, the remaining space is too narrow or irregularly shaped to fit another full bracket.`
+        : `在放置 ${maxSets} 套支架后，剩余空间太窄或形状不规则，无法容纳另一套完整支架。`}
+      </div>
+    </div>
+  );
+}
+
+function AreaAssessment({
+  normalizedAreaM2, usableAreaM2, maxSets, isFromLayout, maxBracketSetsByLayout,
+  effectiveAreaPerSet, bracketLengthM, bracketWidthM, bracketLengthFt, bracketWidthFt,
+  inputUnit, lang,
+}: {
+  normalizedAreaM2: number;
+  usableAreaM2: number;
+  maxSets: number;
+  isFromLayout: boolean;
+  maxBracketSetsByLayout?: number | null;
+  effectiveAreaPerSet: number;
+  bracketLengthM: number;
+  bracketWidthM: number;
+  bracketLengthFt: string;
+  bracketWidthFt: string;
+  inputUnit: AreaUnit;
+  lang: 'zh' | 'en';
+}) {
+  const valid = maxSets >= 1;
+  const sourceNote = maxBracketSetsByLayout == null
+    ? (lang === 'en' ? ' (spacing-aware estimate from area input)' : '（基于面积的间距修正估算）')
+    : (lang === 'en' ? ' (polygon layout result)' : '（多边形排布结果）');
+  return (
+    <div style={{ padding: '1rem 1.25rem', background: valid ? 'var(--theme-tone-bg)' : 'var(--theme-tone-danger-bg)', border: `1px solid ${valid ? 'var(--theme-tone-border)' : 'var(--theme-tone-danger-border)'}`, borderRadius: '10px', borderLeft: `4px solid ${valid ? 'var(--theme-tone-accent)' : 'var(--theme-tone-danger-accent)'}` }}>
+      <div style={{ fontWeight: 700, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.95rem' }}>{lang === 'en' ? 'Site Assessment Result' : '场地评估结果'}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem' }}>
+        <div style={{ textAlign: 'center', background: 'white', borderRadius: '8px', padding: '0.65rem' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1a365d', lineHeight: 1.25 }}>{formatAreaDualFtFirst(usableAreaM2, lang, 2).combined}</div>
+          <div style={{ fontSize: '0.72rem', color: '#718096' }}>
+            {isFromLayout ? (lang === 'en' ? 'Usable Area (body + spacing)' : '可用面积（本体 + 间距）') : (lang === 'en' ? 'Site Area' : '场地面积')}
+          </div>
+        </div>
+        <div style={{ textAlign: 'center', background: 'white', borderRadius: '8px', padding: '0.65rem' }}>
+          <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--theme-tone-text)' }}>{maxSets}</div>
+          <div style={{ fontSize: '0.72rem', color: '#718096' }}>{lang === 'en' ? 'Maximum Installable Sets' : '最大可安装套数'}</div>
+        </div>
+      </div>
+      {isFromLayout && (
+        <UnusableAreaNote
+          totalAreaM2={normalizedAreaM2}
+          usableAreaM2={usableAreaM2}
+          effectiveAreaPerSet={effectiveAreaPerSet}
+          maxSets={maxSets}
+          bracketLengthM={bracketLengthM}
+          bracketWidthM={bracketWidthM}
+          bracketLengthFt={bracketLengthFt}
+          bracketWidthFt={bracketWidthFt}
+          lang={lang}
+        />
+      )}
+      <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#718096' }}>
+        {lang === 'en'
+          ? `Optimization will search within 1 to ${Math.max(maxSets, 0)} installable sets.${sourceNote}`
+          : `后续优化会在 1 到 ${Math.max(maxSets, 0)} 套可安装支架范围内搜索。${sourceNote}`}
+      </div>
+      <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#718096' }}>
+        {lang === 'en' ? 'Current input unit: ' : '当前输入口径：'}{formatAreaSingle(normalizedAreaM2, inputUnit, lang)}
+      </div>
+    </div>
+  );
+}
+
 export default function StepArea({
   availableAreaM2,
   grossAreaM2: _grossAreaM2,
@@ -243,96 +341,20 @@ export default function StepArea({
 
       {/* Site Assessment Result (Req 3.3: only Usable Area + Maximum Installable Sets) */}
       {normalizedAreaM2 > 0 && (
-        <div
-          style={{
-            padding: '1rem 1.25rem',
-            background: maxSets >= 1 ? 'var(--theme-tone-bg)' : 'var(--theme-tone-danger-bg)',
-            border: '1px solid ' + (maxSets >= 1 ? 'var(--theme-tone-border)' : 'var(--theme-tone-danger-border)'),
-            borderRadius: '10px',
-            borderLeft: '4px solid ' + (maxSets >= 1 ? 'var(--theme-tone-accent)' : 'var(--theme-tone-danger-accent)'),
-          }}
-        >
-          <div style={{ fontWeight: 700, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.95rem' }}>
-            {lang === 'en' ? 'Site Assessment Result' : '\u573A\u5730\u8BC4\u4F30\u7ED3\u679C'}
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-              gap: '0.75rem',
-            }}
-          >
-            {/* Usable Area card */}
-            <div style={{ textAlign: 'center', background: 'white', borderRadius: '8px', padding: '0.65rem' }}>
-              <div style={{ fontSize: '1rem', fontWeight: 800, color: '#1a365d', lineHeight: 1.25 }}>
-                {formatAreaDualFtFirst(usableAreaM2, lang, 2).combined}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#718096' }}>
-                {isFromLayout
-                  ? (lang === 'en' ? 'Usable Area (body + spacing)' : '可用面积（本体 + 间距）')
-                  : (lang === 'en' ? 'Site Area' : '场地面积')}
-              </div>
-            </div>
-
-            {/* Maximum Installable Sets card */}
-            <div style={{ textAlign: 'center', background: 'white', borderRadius: '8px', padding: '0.65rem' }}>
-              <div style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--theme-tone-text)' }}>{maxSets}</div>
-              <div style={{ fontSize: '0.72rem', color: '#718096' }}>
-                {lang === 'en' ? 'Maximum Installable Sets' : '\u6700\u5927\u53EF\u5B89\u88C5\u5957\u6570'}
-              </div>
-            </div>
-          </div>
-
-          {/* Unusable area explanation — 仅框选排布时显示（手动输入无法精确区分） */}
-          {isFromLayout && normalizedAreaM2 > usableAreaM2 && usableAreaM2 > 0 && (() => {
-            const unusableM2 = normalizedAreaM2 - usableAreaM2;
-            const unusableFt2Display = formatAreaDualFtFirst(unusableM2, lang, 2).combined;
-            const effFt2 = sqmToSqft(effectiveAreaPerSet).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-            const effM2 = effectiveAreaPerSet.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-            return (
-              <div style={{
-                marginTop: '0.6rem',
-                padding: '0.6rem 0.85rem',
-                background: '#fffbeb',
-                border: '1px solid #fde68a',
-                borderRadius: '8px',
-                fontSize: '0.78rem',
-                color: '#92400e',
-                lineHeight: 1.6,
-              }}>
-                <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>
-                  {lang === 'en'
-                    ? `Unusable area: ${unusableFt2Display}`
-                    : `不可用面积：${unusableFt2Display}`}
-                </div>
-                <div style={{ marginBottom: '0.2rem' }}>
-                  {lang === 'en'
-                    ? 'This remaining area is edge/corner space that cannot fit another bracket set because:'
-                    : '该剩余面积为边角空间，无法再安装更多支架，原因如下：'}
-                </div>
-                <div>(1) {lang === 'en'
-                  ? `Each bracket set occupies ${effFt2} ft² (${effM2} m²) including the ${bracketLengthFt} ft × ${bracketWidthFt} ft bracket body and surrounding maintenance spacing.`
-                  : `每套支架有效占地 ${effFt2} ft²（${effM2} m²），包含 ${bracketLengthM} m × ${bracketWidthM} m 支架本体及周围维护间距。`}</div>
-                <div>(2) {lang === 'en'
-                  ? `After placing ${maxSets} set${maxSets > 1 ? 's' : ''}, the remaining space is too narrow or irregularly shaped to fit another full bracket.`
-                  : `在放置 ${maxSets} 套支架后，剩余空间太窄或形状不规则，无法容纳另一套完整支架。`}</div>
-              </div>
-            );
-          })()}
-
-          <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#718096' }}>
-            {lang === 'en'
-              ? 'Optimization will search within 1 to ' + Math.max(maxSets, 0) + ' installable sets.' + (maxBracketSetsByLayout == null ? ' (spacing-aware estimate from area input)' : ' (polygon layout result)')
-              : '\u540E\u7EED\u4F18\u5316\u4F1A\u5728 1 \u5230 ' + Math.max(maxSets, 0) + ' \u5957\u53EF\u5B89\u88C5\u652F\u67B6\u8303\u56F4\u5185\u641C\u7D22\u3002' + (maxBracketSetsByLayout == null ? '\uFF08\u57FA\u4E8E\u9762\u79EF\u7684\u95F4\u8DDD\u4FEE\u6B63\u4F30\u7B97\uFF09' : '\uFF08\u591A\u8FB9\u5F62\u6392\u5E03\u7ED3\u679C\uFF09')}
-          </div>
-
-          <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#718096' }}>
-            {lang === 'en'
-              ? 'Current input unit: ' + formatAreaSingle(normalizedAreaM2, inputUnit, lang)
-              : '\u5F53\u524D\u8F93\u5165\u53E3\u5F84\uFF1A' + formatAreaSingle(normalizedAreaM2, inputUnit, lang)}
-          </div>
-        </div>
+        <AreaAssessment
+          normalizedAreaM2={normalizedAreaM2}
+          usableAreaM2={usableAreaM2}
+          maxSets={maxSets}
+          isFromLayout={isFromLayout}
+          maxBracketSetsByLayout={maxBracketSetsByLayout}
+          effectiveAreaPerSet={effectiveAreaPerSet}
+          bracketLengthM={bracketLengthM}
+          bracketWidthM={bracketWidthM}
+          bracketLengthFt={bracketLengthFt}
+          bracketWidthFt={bracketWidthFt}
+          inputUnit={inputUnit}
+          lang={lang}
+        />
       )}
     </div>
   );

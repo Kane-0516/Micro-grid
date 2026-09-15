@@ -1,1 +1,1 @@
-﻿
+"""Pydantic request/response schemas."""

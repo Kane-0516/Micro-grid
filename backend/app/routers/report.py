@@ -1,6 +1,5 @@
-"""
-POST /api/send-report
-"""
+"""POST /api/send-report."""
+
 from __future__ import annotations
 
 import base64
@@ -21,8 +20,9 @@ router = APIRouter(prefix="/api", tags=["report"])
 
 @router.post("/send-report", response_model=SendReportResponse)
 async def send_report(req: SendReportRequest):
-    """
-    Generate the solution Excel report and optionally email it to the contact.
+    """Generate the solution Excel report.
+
+    Optionally emails it to the contact.
     """
     try:
         file_name = get_report_file_name(req.contact.email)
@@ -32,7 +32,12 @@ async def send_report(req: SendReportRequest):
         email_sent = False
         email_error = ""
 
-        if cfg.SMTP_HOST and cfg.SMTP_USER and cfg.SMTP_PASS and req.contact.email:
+        if (
+            cfg.SMTP_HOST
+            and cfg.SMTP_USER
+            and cfg.SMTP_PASS
+            and req.contact.email
+        ):
             try:
                 contact = req.contact
                 system_config = req.systemConfig or {}
@@ -40,19 +45,24 @@ async def send_report(req: SendReportRequest):
                 included_lines = [
                     "  - Project basic information",
                     "  - System configuration and component details",
-                    "  - Cost and parameter worksheets according to your template",
+                    "  - Cost and parameter worksheets according to your "
+                    "template",
                 ]
 
-                subject = f"MicroGrid Microgrid Solution Report - {pv_kw} kW PV"
+                subject = (
+                    f"VoltageEnergy Microgrid Solution Report - {pv_kw} kW PV"
+                )
                 body = (
                     f"Dear {contact.firstName} {contact.lastName},\n\n"
-                    "Thank you for using MicroGrid Microgrid Advisor.\n\n"
-                    "Please find attached your Microgrid Solution Configuration Report, including:\n"
+                    "Thank you for using VoltageEnergy Microgrid Advisor.\n\n"
+                    "Please find attached your Microgrid Solution "
+                    "Configuration Report, including:\n"
                     + "\n".join(included_lines)
-                    + "\n\nFor further information or to schedule an on-site assessment:\n"
-                    "  Email: sales@example.com\n"
-                    "  Web:   www.example.com\n\n"
-                    "MicroGrid | Microgrid Solutions\n"
+                    + "\n\nFor further information or to schedule an "
+                    "on-site assessment:\n"
+                    "  Email: sales@voltageenergy.com\n"
+                    "  Web:   www.voltageenergy.com\n\n"
+                    "VoltageEnergy | Energy For Future\n"
                 )
 
                 msg = MIMEMultipart()
@@ -67,7 +77,9 @@ async def send_report(req: SendReportRequest):
                 )
                 part.set_payload(excel_bytes)
                 encoders.encode_base64(part)
-                part.add_header("Content-Disposition", f'attachment; filename="{file_name}"')
+                part.add_header(
+                    "Content-Disposition", f'attachment; filename="{file_name}"'
+                )
                 msg.attach(part)
 
                 with smtplib.SMTP(cfg.SMTP_HOST, cfg.SMTP_PORT) as srv:

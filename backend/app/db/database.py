@@ -1,6 +1,8 @@
+"""PostgreSQL connection management.
+
+Handles schema creation and the initial catalog seed.
 """
-PostgreSQL connection management, schema creation, and initial catalog seed.
-"""
+
 from __future__ import annotations
 
 import threading
@@ -106,16 +108,20 @@ CREATE TABLE IF NOT EXISTS catalog_blobs (
 """
 
 _MIGRATIONS = [
-    "ALTER TABLE diesel_generators ADD COLUMN IF NOT EXISTS fuel_intercept_coeff DOUBLE PRECISION DEFAULT 0.033",
-    "ALTER TABLE diesel_generators ADD COLUMN IF NOT EXISTS fuel_slope_coeff DOUBLE PRECISION DEFAULT 0.273",
+    "ALTER TABLE diesel_generators ADD COLUMN IF NOT EXISTS "
+    "fuel_intercept_coeff DOUBLE PRECISION DEFAULT 0.033",
+    "ALTER TABLE diesel_generators ADD COLUMN IF NOT EXISTS fuel_slope_coeff "
+    "DOUBLE PRECISION DEFAULT 0.273",
 ]
 
 
 def get_connection() -> Connection:
+    """Open a new PostgreSQL connection using the configured DATABASE_URL."""
     return connect(DATABASE_URL, row_factory=dict_row, connect_timeout=3)
 
 
 def create_schema(conn: Connection) -> None:
+    """Create tables and apply migrations if they don't already exist."""
     statements = [stmt.strip() for stmt in _DDL.split(";") if stmt.strip()]
     with conn.cursor() as cur:
         for statement in statements:
@@ -137,6 +143,11 @@ def _is_empty(conn: Connection) -> bool:
 
 
 def ensure_db_seeded() -> None:
+    """Create the schema and seed it from products.yaml if empty.
+
+    Safe to call repeatedly; only runs once per process (guarded by a
+    module-level flag and lock).
+    """
     global _seeded
     if _seeded:
         return
@@ -155,7 +166,10 @@ def ensure_db_seeded() -> None:
                 from app.db.seed import merge_catalog_defaults_from_yaml
 
                 merge_catalog_defaults_from_yaml(str(PRODUCTS_YAML), conn)
-                print(f"[db] Backfilled missing catalog defaults from {PRODUCTS_YAML}")
+                print(
+                    "[db] Backfilled missing catalog defaults from "
+                    f"{PRODUCTS_YAML}"
+                )
         finally:
             conn.close()
         _seeded = True

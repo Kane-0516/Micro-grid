@@ -86,6 +86,34 @@ interface ConstraintPanelProps {
   onAreaUnitInput: (v: AreaUnit) => void;
 }
 
+function getDieselStatus(
+  isEn: boolean,
+  hasGenerator: boolean,
+  dieselIsNew: boolean,
+  dieselCapacityKw: number,
+): { text: string; color: string } {
+  if (!hasGenerator) {
+    return {
+      text: isEn ? 'No diesel generator (auto-sized)' : '无柴发（系统自动定容）',
+      color: '#718096',
+    };
+  }
+  if (!dieselIsNew) {
+    const saving = (dieselCapacityKw * 500).toLocaleString();
+    return {
+      text: isEn
+        ? `Existing ${dieselCapacityKw} kW Diesel → excluded from quote (CAPEX saving about $${saving})`
+        : `已有 ${dieselCapacityKw} kW 柴发 → 不计入报价（CAPEX 节省约 $${saving}）`,
+      color: 'var(--theme-tone-text)',
+    };
+  }
+  const capacity = dieselCapacityKw > 0 ? `${dieselCapacityKw} kW` : (isEn ? '(auto-sized)' : '（自动定容）');
+  return {
+    text: isEn ? `New ${capacity} Diesel → included in CAPEX` : `新购 ${capacity} 柴发 → 计入 CAPEX`,
+    color: 'var(--theme-tone-warm-text)',
+  };
+}
+
 function ConstraintPanel({
   lang, hasGenerator, dieselCapacityKw, dieselIsNew,
   hasAreaLimit, availableArea, areaInputUnit, areaPerSetM2, onHasAreaLimit, onAreaInput, onAreaUnitInput,
@@ -95,18 +123,7 @@ function ConstraintPanel({
 
   //{isEn ? ' Diesel' : ' 柴发'}状态描述
   const isEn = lang === 'en';
-  let dieselStatusText = '';
-  let dieselStatusColor = '';
-  if (!hasGenerator) {
-    dieselStatusText = isEn ? 'No diesel generator (auto-sized)' : '无柴发（系统自动定容）';
-    dieselStatusColor = '#718096';
-  } else if (!dieselIsNew) {
-    dieselStatusText  = `已有 ${dieselCapacityKw} kW{isEn ? ' Diesel' : ' 柴发'} → 不计入报价（CAPEX 节省约 $${(dieselCapacityKw * 500).toLocaleString()}）`;
-    dieselStatusColor = 'var(--theme-tone-text)';
-  } else {
-    dieselStatusText  = `新购 ${dieselCapacityKw > 0 ? dieselCapacityKw + ' kW' : '（自动定容）'}{isEn ? ' Diesel' : ' 柴发'} → 计入 CAPEX`;
-    dieselStatusColor = 'var(--theme-tone-warm-text)';
-  }
+  const dieselStatus = getDieselStatus(isEn, hasGenerator, dieselIsNew, dieselCapacityKw);
 
   return (
     <div style={{
@@ -134,8 +151,8 @@ function ConstraintPanel({
               {isEn ? 'Selected in Step 3' : '已在第3步选择'}
             </span>
           </div>
-          <div style={{ fontSize: '0.87rem', fontWeight: 600, color: dieselStatusColor }}>
-            {dieselStatusText}
+          <div style={{ fontSize: '0.87rem', fontWeight: 600, color: dieselStatus.color }}>
+            {dieselStatus.text}
           </div>
         </div>
       </div>
@@ -234,14 +251,84 @@ function formatBreakevenYear(value: number, isEn: boolean): string {
   return isEn ? `Year ${Math.round(value)}` : `第 ${Math.round(value)} 年`;
 }
 
+const TOP_CARD_THEME = {
+  best: { accent: 'var(--theme-brand-700)', background: 'var(--theme-tone-bg)' },
+  runner: { accent: 'var(--theme-tone-text)', background: 'var(--theme-tone-bg)' },
+  third: { accent: 'var(--theme-tone-warm-text)', background: 'var(--theme-tone-warm-bg)' },
+} as const;
+
+function getTopCardBadge(kind: TopCardProps['kind'], isEn: boolean): string {
+  const badges = {
+    en: { best: 'Plan 1  Recommended', runner: 'Plan 2  Runner-up', third: 'Plan 3  Alternative' },
+    zh: { best: '方案1  最优推荐', runner: '方案2  次优推荐', third: '方案3  备选方案' },
+  };
+  return badges[isEn ? 'en' : 'zh'][kind];
+}
+
+function getPaybackColor(paybackYears: number): string {
+  if (paybackYears <= 5) return 'var(--theme-tone-text)';
+  if (paybackYears <= 7) return 'var(--theme-tone-warm-text)';
+  return 'var(--theme-tone-danger-text)';
+}
+
+function TopCardHeader({
+  badge,
+  accent,
+  selected,
+  existingDiesel,
+  isEn,
+}: {
+  badge: string;
+  accent: string;
+  selected: boolean;
+  existingDiesel: boolean;
+  isEn: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
+      <span style={{
+        background: accent, color: '#fff', borderRadius: '999px',
+        padding: '2px 10px', fontSize: '0.76rem', fontWeight: 700,
+      }}>{badge}</span>
+      {selected && (
+        <span style={{
+          background: accent, color: '#fff', borderRadius: '999px',
+          padding: '2px 8px', fontSize: '0.74rem', fontWeight: 700,
+        }}>{isEn ? 'Selected' : '已选'}</span>
+      )}
+      {existingDiesel && (
+        <span style={{ color: '#718096', fontSize: '0.75rem', marginLeft: 'auto' }}>
+          {isEn ? 'Existing diesel' : '柴发已有'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function TopCardMetrics({ opt, isEn }: { opt: OptimizeOption; isEn: boolean }) {
+  const metrics = [
+    { l: isEn ? 'Selling Price' : '系统售价', v: `$${opt.sellingPriceUsd.toLocaleString()}`, c: '#2d3748' },
+    { l: isEn ? 'Payback' : '折现回本', v: formatBreakevenYear(opt.paybackYears, isEn), c: getPaybackColor(opt.paybackYears) },
+    { l: isEn ? 'Solar Fraction' : '太阳能占比', v: `${opt.solarFractionPct}%`, c: opt.solarFractionPct >= 70 ? 'var(--theme-tone-text)' : 'var(--theme-tone-warm-text)' },
+    { l: isEn ? '10yr NPV' : '10年NPV', v: `$${(opt.npv10yrUsd / 1000).toFixed(0)}k`, c: opt.npv10yrUsd > 0 ? 'var(--theme-tone-text)' : 'var(--theme-tone-danger-text)' },
+    { l: isEn ? 'Annual Savings' : '年均节省', v: `$${opt.annualSavingsUsd.toLocaleString()}/年`, c: 'var(--theme-brand-700)' },
+    { l: isEn ? 'MG Diesel' : '微网耗油', v: `${opt.annualDieselLiters.toLocaleString()} L/年`, c: '#718096' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem' }}>
+      {metrics.map((metric) => (
+        <div key={metric.l} style={{ background: '#f7fafc', borderRadius: '6px', padding: '0.3rem 0.55rem', fontSize: '0.8rem' }}>
+          <div style={{ color: '#718096' }}>{metric.l}</div>
+          <div style={{ fontWeight: 700, color: metric.c, fontSize: '0.9rem' }}>{metric.v}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TopCard({ opt, kind, selected, onSelect, lang }: TopCardProps & { lang: string }) {
   const isEn = lang === 'en';
-  const accent   = kind === 'best' ? 'var(--theme-brand-700)' : kind === 'runner' ? 'var(--theme-tone-text)' : 'var(--theme-tone-warm-text)';
-  const bgLight  = kind === 'best' ? 'var(--theme-tone-bg)'  : kind === 'runner' ? 'var(--theme-tone-bg)' : 'var(--theme-tone-warm-bg)';
-  const badge    = isEn
-    ? (kind === 'best' ? 'Plan 1  Recommended' : kind === 'runner' ? 'Plan 2  Runner-up' : 'Plan 3  Alternative')
-    : (kind === 'best' ? '方案1  最优推荐' : kind === 'runner' ? '方案2  次优推荐' : '方案3  备选方案');
-  const payColor = opt.paybackYears <= 5 ? 'var(--theme-tone-text)' : opt.paybackYears <= 7 ? 'var(--theme-tone-warm-text)' : 'var(--theme-tone-danger-text)';
+  const { accent, background } = TOP_CARD_THEME[kind];
 
   return (
     <div
@@ -249,33 +336,19 @@ function TopCard({ opt, kind, selected, onSelect, lang }: TopCardProps & { lang:
       style={{
         border: `2px solid ${selected ? accent : '#cbd5e0'}`,
         borderRadius: '14px', padding: '1rem 1.15rem',
-        background: selected ? bgLight : '#fff',
+        background: selected ? background : '#fff',
         cursor: 'pointer', transition: 'all 0.15s',
         boxShadow: selected ? `0 0 0 3px ${accent}44` : '0 1px 3px #0002',
         flex: 1, minWidth: 0,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
-        <span style={{
-          background: accent, color: '#fff', borderRadius: '999px',
-          padding: '2px 10px', fontSize: '0.76rem', fontWeight: 700,
-        }}>
-          {badge}
-        </span>
-        {selected && (
-          <span style={{
-            background: accent, color: '#fff', borderRadius: '999px',
-            padding: '2px 8px', fontSize: '0.74rem', fontWeight: 700,
-          }}>
-            {isEn ? 'Selected' : '已选'}
-          </span>
-        )}
-        {!opt.dieselIsNew && opt.dieselKw > 0 && (
-          <span style={{ color: '#718096', fontSize: '0.75rem', marginLeft: 'auto' }}>
-            {isEn ? 'Existing diesel' : '柴发已有'}
-          </span>
-        )}
-      </div>
+      <TopCardHeader
+        badge={getTopCardBadge(kind, isEn)}
+        accent={accent}
+        selected={selected}
+        existingDiesel={!opt.dieselIsNew && opt.dieselKw > 0}
+        isEn={isEn}
+      />
 
       <div style={{ fontWeight: 700, fontSize: '1rem', color: '#2d3748', marginBottom: '0.4rem' }}>
         {opt.bracketSets} 套支架 · {opt.numPacks} 包储能 · {opt.dieselKw} kW{isEn ? ' Diesel' : ' 柴发'}
@@ -284,24 +357,7 @@ function TopCard({ opt, kind, selected, onSelect, lang }: TopCardProps & { lang:
         PV {opt.pvKw.toFixed(1)} kWp &nbsp;|&nbsp; {opt.batteryKwh} kWh 储能
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.45rem' }}>
-        {[
-          { l: isEn ? 'Selling Price' : '系统售价',   v: `$${opt.sellingPriceUsd.toLocaleString()}`,        c: '#2d3748' },
-          { l: isEn ? 'Payback' : '折现回本',   v: formatBreakevenYear(opt.paybackYears, isEn),                           c: payColor },
-          { l: isEn ? 'Solar Fraction' : '太阳能占比', v: `${opt.solarFractionPct}%`,                          c: opt.solarFractionPct >= 70 ? 'var(--theme-tone-text)' : 'var(--theme-tone-warm-text)' },
-          { l: isEn ? '10yr NPV' : '10年NPV',   v: `$${(opt.npv10yrUsd / 1000).toFixed(0)}k`,         c: opt.npv10yrUsd > 0 ? 'var(--theme-tone-text)' : 'var(--theme-tone-danger-text)' },
-          { l: isEn ? 'Annual Savings' : '年均节省',   v: `$${opt.annualSavingsUsd.toLocaleString()}/年`,     c: 'var(--theme-brand-700)' },
-          { l: isEn ? 'MG Diesel' : '微网耗油',   v: `${opt.annualDieselLiters.toLocaleString()} L/年`, c: '#718096' },
-        ].map(m => (
-          <div key={m.l} style={{
-            background: '#f7fafc', borderRadius: '6px',
-            padding: '0.3rem 0.55rem', fontSize: '0.8rem',
-          }}>
-            <div style={{ color: '#718096' }}>{m.l}</div>
-            <div style={{ fontWeight: 700, color: m.c, fontSize: '0.9rem' }}>{m.v}</div>
-          </div>
-        ))}
-      </div>
+      <TopCardMetrics opt={opt} isEn={isEn} />
 
       <button
         onClick={e => { e.stopPropagation(); onSelect(); }}
@@ -323,20 +379,24 @@ function TopCard({ opt, kind, selected, onSelect, lang }: TopCardProps & { lang:
 function OtherRow({ opt, selected, onSelect }: {
   opt: OptimizeOption; selected: boolean; onSelect: () => void;
 }) {
-  const pc = opt.paybackYears <= 5 ? 'var(--theme-tone-text)'
-    : opt.paybackYears <= 7 ? 'var(--theme-tone-warm-text)' : 'var(--theme-tone-danger-text)';
   const reliabilityRisk = !!opt.isReliabilityRisk || opt.lossOfLoadPct > 0.01;
-  const rowBg = selected ? '#e7eef8'
-    : reliabilityRisk ? '#fff5f5'
-    : opt.isRecommended ? 'var(--theme-tone-bg)'
-    : opt.isRunnerUp     ? '#f7f9fc'
-    : opt.isThird        ? 'var(--theme-tone-warm-bg)'
-    : undefined;
+  const recommendationMarker = [
+    [opt.isRecommended, '▲'],
+    [opt.isRunnerUp, '△'],
+    [opt.isThird, '○'],
+  ].find(([matches]) => matches)?.[1] ?? '';
+  const rowBg = [
+    [selected, '#e7eef8'],
+    [reliabilityRisk, '#fff5f5'],
+    [opt.isRecommended, 'var(--theme-tone-bg)'],
+    [opt.isRunnerUp, '#f7f9fc'],
+    [opt.isThird, 'var(--theme-tone-warm-bg)'],
+  ].find(([matches]) => matches)?.[1] as string | undefined;
 
   return (
     <tr onClick={onSelect} style={{ cursor: 'pointer', background: rowBg, transition: 'background 0.1s' }}>
       <td style={{ padding: '0.45rem 0.7rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
-        {opt.isRecommended ? '▲' : opt.isRunnerUp ? '△' : opt.isThird ? '○' : ''} {opt.bracketSets} 套
+        {recommendationMarker} {opt.bracketSets} 套
         {selected && <span style={{ color: 'var(--theme-brand-700)', marginLeft: '4px', fontSize: '0.75rem', fontWeight: 700 }}>(已选)</span>}
         {reliabilityRisk && <span style={{ color: 'var(--theme-tone-danger-text)', marginLeft: '6px', fontSize: '0.75rem', fontWeight: 700 }}>缺供风险 {opt.lossOfLoadPct}%</span>}
       </td>
@@ -346,7 +406,7 @@ function OtherRow({ opt, selected, onSelect }: {
         {opt.solarFractionPct}%
       </td>
       <td style={{ padding: '0.45rem 0.7rem' }}>${opt.sellingPriceUsd.toLocaleString()}</td>
-      <td style={{ padding: '0.45rem 0.7rem', color: pc, fontWeight: 600 }}>{formatBreakevenYear(opt.paybackYears, false)}</td>
+      <td style={{ padding: '0.45rem 0.7rem', color: getPaybackColor(opt.paybackYears), fontWeight: 600 }}>{formatBreakevenYear(opt.paybackYears, false)}</td>
       <td style={{ padding: '0.45rem 0.7rem', color: opt.npv10yrUsd > 0 ? 'var(--theme-tone-text)' : 'var(--theme-tone-danger-text)' }}>
         ${(opt.npv10yrUsd / 1000).toFixed(0)}k
       </td>
@@ -377,6 +437,81 @@ interface StepOptimizeProps {
   emsAddons?: ConfigData['emsAddons'];
   dieselDispatchMode?: ConfigData['dieselDispatchMode'];
   onSelect: (updates: Partial<ConfigData>) => void;
+}
+
+function buildConstraintTags(
+  hasAreaLimit: boolean,
+  availableArea: string,
+  areaInputUnit: AreaUnit,
+  areaPerSetM2: number,
+): string[] {
+  const constrainedAreaM2 = hasAreaLimit ? parseAreaInputValue(availableArea, areaInputUnit) : null;
+  if (!constrainedAreaM2) return [];
+  const maxSets = Math.max(1, Math.floor(constrainedAreaM2 / areaPerSetM2));
+  const areaDual = formatAreaDual(constrainedAreaM2, 'zh');
+  const alternateArea = areaInputUnit === 'm2' ? areaDual.secondary : areaDual.primary;
+  return [
+    `面积 ${formatAreaSingle(constrainedAreaM2, areaInputUnit, 'zh')}（约 ${alternateArea}）→ 最多 ${maxSets} 套`,
+  ];
+}
+
+function getDieselConstraints(hasGenerator: boolean, dieselCapacityKw: number, dieselIsNew: boolean) {
+  const fixedDieselKw = hasGenerator && dieselCapacityKw > 0 ? dieselCapacityKw : null;
+  return {
+    effectiveDieselIsNew: hasGenerator && dieselIsNew,
+    existingDieselKw: hasGenerator && !dieselIsNew ? fixedDieselKw : null,
+    requestedDieselKw: hasGenerator && dieselIsNew ? fixedDieselKw : null,
+  };
+}
+
+function getRecommendedOptionIndex(options: OptimizeOption[]): number {
+  return Math.max(0, options.findIndex((option) => option.isRecommended));
+}
+
+function applyRecommendedOption(
+  options: OptimizeOption[],
+  apply: (option: OptimizeOption, index: number) => void,
+) {
+  const index = getRecommendedOptionIndex(options);
+  const option = options[index];
+  if (option) apply(option, index);
+}
+
+function getOptimizationError(error: unknown, isEn: boolean): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const disconnected = message.includes('fetch') || message.includes('Failed');
+  if (!disconnected) return message;
+  return isEn ? 'API not connected. Start the backend first.' : 'API 未连接，请先启动后端。';
+}
+
+function assertOptimizationSucceeded(
+  response: { success: boolean; error?: string | null },
+  isEn: boolean,
+): void {
+  if (!response.success) {
+    throw new Error(response.error ?? (isEn ? 'Optimization failed' : '优化失败'));
+  }
+}
+
+function OptimizationLoading({
+  visible,
+  constraintTags,
+  annualLoadKwh,
+}: {
+  visible: boolean;
+  constraintTags: string[];
+  annualLoadKwh: number;
+}) {
+  if (!visible) return null;
+  const constraintText = constraintTags.length ? `按约束（${constraintTags.join('、')}）` : '';
+  return (
+    <div style={{ textAlign: 'center', padding: '2rem', color: '#4a5568' }}>
+      <div style={{ marginBottom: '0.4rem' }} />
+      <div>
+        正在{constraintText}为 <strong>{annualLoadKwh.toLocaleString()} kWh/年</strong> 扫描最优方案…
+      </div>
+    </div>
+  );
 }
 
 export default function StepOptimize({
@@ -410,10 +545,11 @@ export default function StepOptimize({
   // 已有柴发（Step 3 选了"现有"）→ 告知优化器不新购、用已知容量
   // 新购柴发（Step 3 选了"新购"）→ 若容量已知则固定，否则自动定容
   // 无柴发 → existingDieselKw = 0（无柴发系统）
-  const fixedDieselKw = hasGenerator && dieselCapacityKw > 0 ? dieselCapacityKw : null;
-  const existingDieselKw = hasGenerator && !dieselIsNew ? fixedDieselKw : null;
-  const requestedDieselKw = hasGenerator && dieselIsNew ? fixedDieselKw : null;
-  const effectiveDieselIsNew = hasGenerator && dieselIsNew;
+  const { existingDieselKw, requestedDieselKw, effectiveDieselIsNew } = getDieselConstraints(
+    hasGenerator,
+    dieselCapacityKw,
+    dieselIsNew,
+  );
 
   const runOptimize = useCallback(async (areaLimit: boolean, areaStr: string, areaUnit: AreaUnit) => {
     if (annualLoadKwh <= 0) return;
@@ -446,23 +582,16 @@ export default function StepOptimize({
         emsAddons: emsAddons || [],
         dieselDispatchMode: dieselDispatchMode || 'cc',
       });
-      if (!resp.success) throw new Error(resp.error ?? (isEn ? 'Optimization failed' : '优化失败'));
+      assertOptimizationSucceeded(resp, isEn);
       const opts = resp.options ?? [];
       setOptions(opts);
       setDieselKw(resp.dieselKw ?? 0);
-      const bestIdx = opts.findIndex((o: OptimizeOption) => o.isRecommended);
-      const idx = bestIdx >= 0 ? bestIdx : 0;
-      if (opts.length > 0) {
-        setSelectedIdx(idx);
-        applyOption(opts[idx]);
-      }
+      applyRecommendedOption(opts, (option, index) => {
+        setSelectedIdx(index);
+        applyOption(option);
+      });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setError(
-        msg.includes('fetch') || msg.includes('Failed')
-          ? (isEn ? 'API not connected. Start the backend first.' : 'API 未连接，请先启动后端。')
-          : msg,
-      );
+      setError(getOptimizationError(e, isEn));
     } finally {
       setLoading(false);
     }
@@ -520,14 +649,12 @@ export default function StepOptimize({
   const thirdOpt  = options.find(o => o.isThird);
 
   // 约束标签
-  const constraintTags: string[] = [];
-  const constrainedAreaM2 = hasAreaLimit ? parseAreaInputValue(availableArea, areaInputUnit) : null;
-  if (constrainedAreaM2) {
-    const mx = Math.max(1, Math.floor(constrainedAreaM2 / areaPerSetM2));
-    const areaDual = formatAreaDual(constrainedAreaM2, 'zh');
-    const alternateArea = areaInputUnit === 'm2' ? areaDual.secondary : areaDual.primary;
-    constraintTags.push(`面积 ${formatAreaSingle(constrainedAreaM2, areaInputUnit, 'zh')}（约 ${alternateArea}）→ 最多 ${mx} 套`);
-  }
+  const constraintTags = buildConstraintTags(hasAreaLimit, availableArea, areaInputUnit, areaPerSetM2);
+  const topOptions = [
+    { option: bestOpt, kind: 'best' as const },
+    { option: runnerOpt, kind: 'runner' as const },
+    { option: thirdOpt, kind: 'third' as const },
+  ].filter((entry): entry is { option: OptimizeOption; kind: 'best' | 'runner' | 'third' } => Boolean(entry.option));
 
   return (
     <div>
@@ -549,15 +676,11 @@ export default function StepOptimize({
       />
 
       {/* 加载中 */}
-      {loading && (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#4a5568' }}>
-          <div style={{ marginBottom: '0.4rem' }} />
-          <div>
-            正在{constraintTags.length ? `按约束（${constraintTags.join('、')}）` : ''}
-            为 <strong>{annualLoadKwh.toLocaleString()} kWh/年</strong> 扫描最优方案…
-          </div>
-        </div>
-      )}
+      <OptimizationLoading
+        visible={loading}
+        constraintTags={constraintTags}
+        annualLoadKwh={annualLoadKwh}
+      />
 
       {/* 错误 */}
       {error && (
@@ -604,23 +727,21 @@ export default function StepOptimize({
           </div>
 
           {/* ── 方案1 / 方案2 / 方案3 对比卡 ── */}
-          {(bestOpt || runnerOpt || thirdOpt) && (
+          {topOptions.length > 0 && (
             <div style={{ display: 'flex', gap: '0.9rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-              {bestOpt && (
-                <TopCard lang={lang} opt={bestOpt} kind="best"
-                  selected={selectedIdx === options.indexOf(bestOpt)}
-                  onSelect={() => handleSelect(options.indexOf(bestOpt))} />
-              )}
-              {runnerOpt && (
-                <TopCard lang={lang} opt={runnerOpt} kind="runner"
-                  selected={selectedIdx === options.indexOf(runnerOpt)}
-                  onSelect={() => handleSelect(options.indexOf(runnerOpt))} />
-              )}
-              {thirdOpt && (
-                <TopCard lang={lang} opt={thirdOpt} kind="third"
-                  selected={selectedIdx === options.indexOf(thirdOpt)}
-                  onSelect={() => handleSelect(options.indexOf(thirdOpt))} />
-              )}
+              {topOptions.map(({ option, kind }) => {
+                const index = options.indexOf(option);
+                return (
+                  <TopCard
+                    key={kind}
+                    lang={lang}
+                    opt={option}
+                    kind={kind}
+                    selected={selectedIdx === index}
+                    onSelect={() => handleSelect(index)}
+                  />
+                );
+              })}
             </div>
           )}
 

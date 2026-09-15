@@ -376,6 +376,88 @@ function searchBestLayoutForPolygon(polygon: LocalPoint[], spacingM: number, bra
   return bestLayout;
 }
 
+function addOffsetCandidate(offsets: Set<number>, remainder: number, pitch: number) {
+  const normalized = remainder <= pitch / 2 ? remainder : pitch - remainder;
+  offsets.add(Number(normalized.toFixed(4)));
+}
+
+function collectOffsetCandidates(
+  points: LocalPoint[],
+  min: number,
+  pitch: number,
+  footprint: number,
+  step: number,
+  coordinate: (point: LocalPoint) => number,
+): number[] {
+  const offsets = new Set<number>();
+  for (let offset = 0; offset <= pitch / 2 + 1e-6; offset += step) {
+    offsets.add(Number(offset.toFixed(4)));
+  }
+  for (const point of points) {
+    const remainder = ((coordinate(point) - min - footprint / 2) % pitch + pitch) % pitch;
+    addOffsetCandidate(offsets, remainder, pitch);
+  }
+  return Array.from(offsets).sort((left, right) => left - right);
+}
+
+function selectLargerLayout(
+  current: LayoutRectangle[],
+  candidate: LayoutRectangle[],
+): LayoutRectangle[] {
+  return candidate.length > current.length ? candidate : current;
+}
+
+function evaluateLayout(
+  polygon: LocalPoint[],
+  spacingM: number,
+  angle: number,
+  offsetStepHintM: number,
+  bracketLengthM: number,
+  bracketWidthM: number,
+  swapped: boolean,
+): LayoutRectangle[] {
+  const rotatedPolygon = polygon.map(point => rotatePoint(point, -angle));
+  const bbox = getBoundingBox(rotatedPolygon);
+  const gridLength = swapped ? bracketWidthM : bracketLengthM;
+  const gridWidth = swapped ? bracketLengthM : bracketWidthM;
+  const pitchX = gridLength + spacingM;
+  const pitchY = gridWidth + spacingM;
+  const xOffsetStep = Math.max(0.25, Math.min(offsetStepHintM, pitchX / 4));
+  const yOffsetStep = Math.max(0.25, Math.min(offsetStepHintM, pitchY / 4));
+  const midpoints = rotatedPolygon.map((point, index) => {
+    const next = rotatedPolygon[(index + 1) % rotatedPolygon.length];
+    return { x: (point.x + next.x) / 2, y: (point.y + next.y) / 2 };
+  });
+  const candidatePoints = swapped ? rotatedPolygon : [...rotatedPolygon, ...midpoints];
+  const sortedXOffsets = collectOffsetCandidates(
+    candidatePoints, bbox.minX, pitchX, gridLength, xOffsetStep, point => point.x,
+  );
+  const sortedYOffsets = collectOffsetCandidates(
+    candidatePoints, bbox.minY, pitchY, gridWidth, yOffsetStep, point => point.y,
+  );
+  let bestLayout: LayoutRectangle[] = [];
+
+  for (const xOffset of sortedXOffsets) {
+    for (const yOffset of sortedYOffsets) {
+      const buildLayout = (direction: 1 | -1) => swapped
+        ? buildAxisAlignedLayoutCustom(
+            polygon, bbox, angle, pitchX, pitchY, gridLength, gridWidth,
+            xOffset, yOffset, direction, direction, bracketLengthM, bracketWidthM,
+          )
+        : buildAxisAlignedLayout(
+            polygon, bbox, angle, pitchX, pitchY, xOffset, yOffset,
+            direction, direction, bracketLengthM, bracketWidthM,
+          );
+      const forwardLayout = buildLayout(1);
+      const mirroredLayout = buildLayout(-1);
+      bestLayout = selectLargerLayout(bestLayout, forwardLayout);
+      bestLayout = selectLargerLayout(bestLayout, mirroredLayout);
+    }
+  }
+
+  return bestLayout;
+}
+
 function evaluateLayoutAtAngle(
   polygon: LocalPoint[],
   spacingM: number,
@@ -384,102 +466,7 @@ function evaluateLayoutAtAngle(
   bracketLengthM: number,
   bracketWidthM: number,
 ): LayoutRectangle[] {
-  const rotatedPolygon = polygon.map(point => rotatePoint(point, -angle));
-  const bbox = getBoundingBox(rotatedPolygon);
-  const pitchX = bracketLengthM + spacingM;
-  const pitchY = bracketWidthM + spacingM;
-  const xOffsetStep = Math.max(0.25, Math.min(offsetStepHintM, pitchX / 4));
-  const yOffsetStep = Math.max(0.25, Math.min(offsetStepHintM, pitchY / 4));
-  const xOffsets = new Set<number>();
-  const yOffsets = new Set<number>();
-
-  for (let offset = 0; offset <= pitchX / 2 + 1e-6; offset += xOffsetStep) {
-    xOffsets.add(Number(offset.toFixed(4)));
-  }
-  for (let offset = 0; offset <= pitchY / 2 + 1e-6; offset += yOffsetStep) {
-    yOffsets.add(Number(offset.toFixed(4)));
-  }
-
-  for (const point of rotatedPolygon) {
-    const xRemainder = ((point.x - bbox.minX - bracketLengthM / 2) % pitchX + pitchX) % pitchX;
-    const yRemainder = ((point.y - bbox.minY - bracketWidthM / 2) % pitchY + pitchY) % pitchY;
-    if (xRemainder <= pitchX / 2 + 1e-6) {
-      xOffsets.add(Number(xRemainder.toFixed(4)));
-    } else {
-      xOffsets.add(Number((pitchX - xRemainder).toFixed(4)));
-    }
-    if (yRemainder <= pitchY / 2 + 1e-6) {
-      yOffsets.add(Number(yRemainder.toFixed(4)));
-    } else {
-      yOffsets.add(Number((pitchY - yRemainder).toFixed(4)));
-    }
-  }
-
-  for (let i = 0; i < rotatedPolygon.length; i += 1) {
-    const current = rotatedPolygon[i];
-    const next = rotatedPolygon[(i + 1) % rotatedPolygon.length];
-    const midpoint = {
-      x: (current.x + next.x) / 2,
-      y: (current.y + next.y) / 2,
-    };
-
-    const xRemainder = ((midpoint.x - bbox.minX - bracketLengthM / 2) % pitchX + pitchX) % pitchX;
-    const yRemainder = ((midpoint.y - bbox.minY - bracketWidthM / 2) % pitchY + pitchY) % pitchY;
-    if (xRemainder <= pitchX / 2 + 1e-6) {
-      xOffsets.add(Number(xRemainder.toFixed(4)));
-    } else {
-      xOffsets.add(Number((pitchX - xRemainder).toFixed(4)));
-    }
-    if (yRemainder <= pitchY / 2 + 1e-6) {
-      yOffsets.add(Number(yRemainder.toFixed(4)));
-    } else {
-      yOffsets.add(Number((pitchY - yRemainder).toFixed(4)));
-    }
-  }
-
-  const sortedXOffsets = Array.from(xOffsets).sort((left, right) => left - right);
-  const sortedYOffsets = Array.from(yOffsets).sort((left, right) => left - right);
-  let bestLayout: LayoutRectangle[] = [];
-
-  for (const xOffset of sortedXOffsets) {
-    for (const yOffset of sortedYOffsets) {
-      const forwardLayout = buildAxisAlignedLayout(
-        polygon,
-        bbox,
-        angle,
-        pitchX,
-        pitchY,
-        xOffset,
-        yOffset,
-        1,
-        1,
-        bracketLengthM,
-        bracketWidthM,
-      );
-      if (forwardLayout.length > bestLayout.length) {
-        bestLayout = forwardLayout;
-      }
-
-      const mirroredLayout = buildAxisAlignedLayout(
-        polygon,
-        bbox,
-        angle,
-        pitchX,
-        pitchY,
-        xOffset,
-        yOffset,
-        -1,
-        -1,
-        bracketLengthM,
-        bracketWidthM,
-      );
-      if (mirroredLayout.length > bestLayout.length) {
-        bestLayout = mirroredLayout;
-      }
-    }
-  }
-
-  return bestLayout;
+  return evaluateLayout(polygon, spacingM, angle, offsetStepHintM, bracketLengthM, bracketWidthM, false);
 }
 
 /**
@@ -494,85 +481,7 @@ function evaluateLayoutAtAngleSwapped(
   bracketLengthM: number,
   bracketWidthM: number,
 ): LayoutRectangle[] {
-  const rotatedPolygon = polygon.map(point => rotatePoint(point, -angle));
-  const bbox = getBoundingBox(rotatedPolygon);
-  // 交换：X 方向放短边，Y 方向放长边
-  const pitchX = bracketWidthM + spacingM;
-  const pitchY = bracketLengthM + spacingM;
-  const xOffsetStep = Math.max(0.25, Math.min(offsetStepHintM, pitchX / 4));
-  const yOffsetStep = Math.max(0.25, Math.min(offsetStepHintM, pitchY / 4));
-  const xOffsets = new Set<number>();
-  const yOffsets = new Set<number>();
-
-  for (let offset = 0; offset <= pitchX / 2 + 1e-6; offset += xOffsetStep) {
-    xOffsets.add(Number(offset.toFixed(4)));
-  }
-  for (let offset = 0; offset <= pitchY / 2 + 1e-6; offset += yOffsetStep) {
-    yOffsets.add(Number(offset.toFixed(4)));
-  }
-
-  for (const point of rotatedPolygon) {
-    const xRemainder = ((point.x - bbox.minX - bracketWidthM / 2) % pitchX + pitchX) % pitchX;
-    const yRemainder = ((point.y - bbox.minY - bracketLengthM / 2) % pitchY + pitchY) % pitchY;
-    if (xRemainder <= pitchX / 2 + 1e-6) {
-      xOffsets.add(Number(xRemainder.toFixed(4)));
-    } else {
-      xOffsets.add(Number((pitchX - xRemainder).toFixed(4)));
-    }
-    if (yRemainder <= pitchY / 2 + 1e-6) {
-      yOffsets.add(Number(yRemainder.toFixed(4)));
-    } else {
-      yOffsets.add(Number((pitchY - yRemainder).toFixed(4)));
-    }
-  }
-
-  const sortedXOffsets = Array.from(xOffsets).sort((left, right) => left - right);
-  const sortedYOffsets = Array.from(yOffsets).sort((left, right) => left - right);
-  let bestLayout: LayoutRectangle[] = [];
-
-  for (const xOffset of sortedXOffsets) {
-    for (const yOffset of sortedYOffsets) {
-      const forwardLayout = buildAxisAlignedLayoutCustom(
-        polygon,
-        bbox,
-        angle,
-        pitchX,
-        pitchY,
-        bracketWidthM,
-        bracketLengthM,
-        xOffset,
-        yOffset,
-        1,
-        1,
-        bracketLengthM,
-        bracketWidthM,
-      );
-      if (forwardLayout.length > bestLayout.length) {
-        bestLayout = forwardLayout;
-      }
-
-      const mirroredLayout = buildAxisAlignedLayoutCustom(
-        polygon,
-        bbox,
-        angle,
-        pitchX,
-        pitchY,
-        bracketWidthM,
-        bracketLengthM,
-        xOffset,
-        yOffset,
-        -1,
-        -1,
-        bracketLengthM,
-        bracketWidthM,
-      );
-      if (mirroredLayout.length > bestLayout.length) {
-        bestLayout = mirroredLayout;
-      }
-    }
-  }
-
-  return bestLayout;
+  return evaluateLayout(polygon, spacingM, angle, offsetStepHintM, bracketLengthM, bracketWidthM, true);
 }
 
 function splitPolygonForLayout(polygon: LocalPoint[], depth: number): LocalPoint[][] {
@@ -611,6 +520,58 @@ function splitPolygonForLayout(polygon: LocalPoint[], depth: number): LocalPoint
   return refined.length > 0 ? refined : splits;
 }
 
+function isPointInHalfPlane(
+  point: LocalPoint,
+  verticalSplit: boolean,
+  splitValue: number,
+  keepLowerOrLeft: boolean,
+  epsilon: number,
+): boolean {
+  const coordinate = verticalSplit ? point.x : point.y;
+  return keepLowerOrLeft
+    ? coordinate <= splitValue + epsilon
+    : coordinate >= splitValue - epsilon;
+}
+
+function intersectHalfPlane(
+  start: LocalPoint,
+  end: LocalPoint,
+  verticalSplit: boolean,
+  splitValue: number,
+  epsilon: number,
+): LocalPoint | null {
+  const delta = verticalSplit ? end.x - start.x : end.y - start.y;
+  if (Math.abs(delta) < epsilon) return null;
+  const startCoordinate = verticalSplit ? start.x : start.y;
+  const t = (splitValue - startCoordinate) / delta;
+  if (t < -epsilon || t > 1 + epsilon) return null;
+  return verticalSplit
+    ? { x: splitValue, y: start.y + t * (end.y - start.y) }
+    : { x: start.x + t * (end.x - start.x), y: splitValue };
+}
+
+function appendClippedEdge(
+  output: LocalPoint[],
+  current: LocalPoint,
+  next: LocalPoint,
+  currentInside: boolean,
+  nextInside: boolean,
+  verticalSplit: boolean,
+  splitValue: number,
+  epsilon: number,
+) {
+  if (currentInside && nextInside) {
+    output.push(next);
+    return;
+  }
+  const intersection = intersectHalfPlane(current, next, verticalSplit, splitValue, epsilon);
+  if (currentInside && intersection) output.push(intersection);
+  if (!currentInside && nextInside) {
+    if (intersection) output.push(intersection);
+    output.push(next);
+  }
+}
+
 function clipPolygonToHalfPlane(
   polygon: LocalPoint[],
   verticalSplit: boolean,
@@ -621,29 +582,7 @@ function clipPolygonToHalfPlane(
   const output: LocalPoint[] = [];
 
   const isInside = (point: LocalPoint) =>
-    verticalSplit
-      ? keepLowerOrLeft
-        ? point.x <= splitValue + epsilon
-        : point.x >= splitValue - epsilon
-      : keepLowerOrLeft
-        ? point.y <= splitValue + epsilon
-        : point.y >= splitValue - epsilon;
-
-  const intersect = (start: LocalPoint, end: LocalPoint): LocalPoint | null => {
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    if (verticalSplit) {
-      if (Math.abs(dx) < epsilon) return null;
-      const t = (splitValue - start.x) / dx;
-      if (t < -epsilon || t > 1 + epsilon) return null;
-      return { x: splitValue, y: start.y + t * dy };
-    }
-
-    if (Math.abs(dy) < epsilon) return null;
-    const t = (splitValue - start.y) / dy;
-    if (t < -epsilon || t > 1 + epsilon) return null;
-    return { x: start.x + t * dx, y: splitValue };
-  };
+    isPointInHalfPlane(point, verticalSplit, splitValue, keepLowerOrLeft, epsilon);
 
   for (let i = 0; i < polygon.length; i += 1) {
     const current = polygon[i];
@@ -651,22 +590,9 @@ function clipPolygonToHalfPlane(
     const currentInside = isInside(current);
     const nextInside = isInside(next);
 
-    if (currentInside && nextInside) {
-      output.push(next);
-      continue;
-    }
-
-    if (currentInside && !nextInside) {
-      const point = intersect(current, next);
-      if (point) output.push(point);
-      continue;
-    }
-
-    if (!currentInside && nextInside) {
-      const point = intersect(current, next);
-      if (point) output.push(point);
-      output.push(next);
-    }
+    appendClippedEdge(
+      output, current, next, currentInside, nextInside, verticalSplit, splitValue, epsilon,
+    );
   }
 
   return dedupePolygonVertices(output, epsilon);
@@ -811,6 +737,168 @@ function generateBestLayoutResult(polygon: LocalPoint[], spacingM: number, brack
 
 function formatCoordinateLabel(lat: number, lon: number) {
   return `${formatCoordinate(lat)}, ${formatCoordinate(lon)}`;
+}
+
+function calculatePerimeter(points: LocalPoint[]): number {
+  return points.reduce((perimeter, current, index) => {
+    const next = points[(index + 1) % points.length];
+    return perimeter + Math.hypot(next.x - current.x, next.y - current.y);
+  }, 0);
+}
+
+function createMeasurement(
+  grossAreaM2: number,
+  perimeterM: number,
+  vertexCount: number,
+  bracketSpacingM: number,
+  installableSets: number,
+  layoutStrategy: string,
+): SiteAreaMeasurementResult {
+  return {
+    grossAreaM2,
+    usableAreaM2: grossAreaM2,
+    perimeterM,
+    vertexCount,
+    installableSets,
+    bracketSpacingM,
+    layoutStrategy,
+  };
+}
+
+function mapLayoutRectangles(rectangles: RectPosition[]): LayoutRectangle[] {
+  return rectangles.map((rectangle) => ({
+    center: { x: rectangle.centerX, y: rectangle.centerY },
+    corners: rectangle.corners.map((corner) => ({ x: corner[0], y: corner[1] })),
+  }));
+}
+
+function MapMetrics({
+  text,
+  labels,
+  currentSiteLabel,
+  coordinates,
+  lineMeasurement,
+  polygonMeasurement,
+  grossAreaM2,
+  availableAreaM2,
+  maxBracketSetsByLayout,
+  showLayoutArea,
+  bracketLengthM,
+  bracketWidthM,
+  lang,
+}: {
+  text: Record<string, string>;
+  labels: Record<string, string>;
+  currentSiteLabel: string;
+  coordinates: string | null;
+  lineMeasurement: number | null;
+  polygonMeasurement: SiteAreaMeasurementResult | null;
+  grossAreaM2?: number | null;
+  availableAreaM2?: number;
+  maxBracketSetsByLayout?: number | null;
+  showLayoutArea: boolean;
+  bracketLengthM: number;
+  bracketWidthM: number;
+  lang: 'en' | 'zh';
+}) {
+  const metrics = [
+    { label: text.selectedSite, value: currentSiteLabel, visible: true },
+    { label: text.coordinates, value: coordinates, visible: coordinates != null },
+    { label: text.lineDistance, value: lineMeasurement == null ? null : formatDistance(lineMeasurement), visible: lineMeasurement != null },
+    {
+      label: labels.measuredArea,
+      value: polygonMeasurement || grossAreaM2 != null
+        ? formatAreaDisplay(polygonMeasurement?.grossAreaM2 ?? (grossAreaM2 as number))
+        : null,
+      visible: polygonMeasurement != null || grossAreaM2 != null,
+    },
+    {
+      label: labels.usableArea,
+      value: polygonMeasurement || availableAreaM2 != null
+        ? formatAreaDisplay(polygonMeasurement?.usableAreaM2 ?? (availableAreaM2 as number))
+        : null,
+      visible: showLayoutArea && (polygonMeasurement != null || availableAreaM2 != null),
+    },
+    {
+      label: labels.installableSets,
+      value: polygonMeasurement?.installableSets ?? maxBracketSetsByLayout,
+      visible: polygonMeasurement != null || maxBracketSetsByLayout != null,
+    },
+    { label: labels.perimeter, value: polygonMeasurement && formatDistance(polygonMeasurement.perimeterM), visible: polygonMeasurement != null },
+    { label: labels.setback, value: polygonMeasurement && formatDistance(polygonMeasurement.bracketSpacingM), visible: polygonMeasurement != null },
+    { label: labels.bracketFootprint, value: formatBracketFootprint(bracketLengthM, bracketWidthM), visible: polygonMeasurement != null },
+    { label: labels.vertices, value: polygonMeasurement?.vertexCount, visible: polygonMeasurement != null },
+    {
+      label: labels.layoutStrategy,
+      value: polygonMeasurement?.layoutStrategy
+        ? localizeLayoutStrategy(polygonMeasurement.layoutStrategy, lang)
+        : null,
+      visible: Boolean(polygonMeasurement?.layoutStrategy),
+    },
+  ];
+  return (
+    <div className="site-area-map__metrics">
+      {metrics.filter((metric) => metric.visible).map((metric) => (
+        <div key={metric.label}>
+          <span>{metric.label}</span>
+          <strong>{metric.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MapToolbar({
+  mode,
+  text,
+  polygonDraftCount,
+  layoutLoading,
+  lang,
+  onSwitchMode,
+  onFinishPolygon,
+  onReset,
+}: {
+  mode: MeasureMode;
+  text: Record<string, string>;
+  polygonDraftCount: number;
+  layoutLoading: boolean;
+  lang: 'en' | 'zh';
+  onSwitchMode: (mode: MeasureMode) => void;
+  onFinishPolygon: () => void;
+  onReset: () => void;
+}) {
+  const tools: Array<{ mode: MeasureMode; label: string }> = [
+    { mode: 'select', label: text.setSite },
+    { mode: 'line', label: text.measureLine },
+    { mode: 'polygon', label: text.measureArea },
+  ];
+  return (
+    <div className="site-area-map__toolbar">
+      {tools.map((tool) => (
+        <button
+          key={tool.mode}
+          type="button"
+          className={`site-area-map__tool ${mode === tool.mode ? 'is-active' : ''}`}
+          onClick={() => onSwitchMode(tool.mode)}
+        >
+          {tool.label}
+        </button>
+      ))}
+      {mode === 'polygon' && (
+        <button
+          type="button"
+          className="site-area-map__tool is-secondary"
+          onClick={onFinishPolygon}
+          disabled={polygonDraftCount < 3 || layoutLoading}
+        >
+          {layoutLoading ? (lang === 'en' ? 'Optimizing...' : '求解中...') : text.finishArea}
+        </button>
+      )}
+      <button type="button" className="site-area-map__tool is-secondary" onClick={onReset}>
+        {text.reset}
+      </button>
+    </div>
+  );
 }
 
 export default function SiteAreaMap({
@@ -1088,12 +1176,7 @@ export default function SiteAreaMap({
     const local = points.map(point => toLocalPoint(point, origin));
     const grossAreaM2 = getAbsoluteArea(local);
 
-    let perimeterM = 0;
-    for (let i = 0; i < local.length; i += 1) {
-      const current = local[i];
-      const next = local[(i + 1) % local.length];
-      perimeterM += Math.hypot(next.x - current.x, next.y - current.y);
-    }
+    const perimeterM = calculatePerimeter(local);
 
     const centroid = getPolygonCentroid(local);
 
@@ -1110,15 +1193,9 @@ export default function SiteAreaMap({
     }).addTo(map);
 
     // 先显示面积信息，排布结果等后端返回
-    const prelimMeasurement: SiteAreaMeasurementResult = {
-      grossAreaM2,
-      usableAreaM2: grossAreaM2,
-      perimeterM,
-      vertexCount: points.length,
-      installableSets: 0,
-      bracketSpacingM: BRACKET_SPACING,
-      layoutStrategy: 'computing...',
-    };
+    const prelimMeasurement = createMeasurement(
+      grossAreaM2, perimeterM, points.length, BRACKET_SPACING, 0, 'computing...',
+    );
     setPolygonMeasurement(prelimMeasurement);
     setPolygonDraftCount(points.length);
     setLayoutLoading(true);
@@ -1134,15 +1211,9 @@ export default function SiteAreaMap({
           ? `The selected area is too large for layout optimization. The system supports up to approximately ${maxSetsEstimate} bracket sets. Please reduce the selection area and try again.`
           : `框选面积过大，超出布局优化的计算范围。系统最多支持约 ${maxSetsEstimate} 套支架的排布计算，请缩小框选范围后重试。`;
         setAreaLimitWarning(limitMsg);
-        const limitMeasurement: SiteAreaMeasurementResult = {
-          grossAreaM2,
-          usableAreaM2: grossAreaM2,
-          perimeterM,
-          vertexCount: points.length,
-          installableSets: 0,
-          bracketSpacingM: BRACKET_SPACING,
-          layoutStrategy: 'area exceeded',
-        };
+        const limitMeasurement = createMeasurement(
+          grossAreaM2, perimeterM, points.length, BRACKET_SPACING, 0, 'area exceeded',
+        );
         setPolygonMeasurement(limitMeasurement);
         onAreaMeasured?.(limitMeasurement);
         setLayoutLoading(false);
@@ -1153,50 +1224,27 @@ export default function SiteAreaMap({
       const result = await optimizeLayout({ polygon, timeLimitS: 120 });
 
       if (result.success && result.rectangles) {
-        const layoutRects: LayoutRectangle[] = result.rectangles.map(
-          (r: RectPosition) => ({
-            center: { x: r.centerX, y: r.centerY },
-            corners: r.corners.map((c: number[]) => ({ x: c[0], y: c[1] })),
-          }),
-        );
+        const layoutRects = mapLayoutRectangles(result.rectangles);
 
-        const finalMeasurement: SiteAreaMeasurementResult = {
-          grossAreaM2,
-          usableAreaM2: grossAreaM2,
-          perimeterM,
-          vertexCount: points.length,
-          installableSets: result.maxSystems,
-          bracketSpacingM: BRACKET_SPACING,
-          layoutStrategy: result.strategy,
-        };
+        const finalMeasurement = createMeasurement(
+          grossAreaM2, perimeterM, points.length, BRACKET_SPACING, result.maxSystems, result.strategy,
+        );
         setPolygonMeasurement(finalMeasurement);
         renderLayout(layoutRects, origin, centroid, result.maxSystems);
         onAreaMeasured?.(finalMeasurement);
       } else {
         // API 失败，回退到 0
-        const fallbackMeasurement: SiteAreaMeasurementResult = {
-          grossAreaM2,
-          usableAreaM2: grossAreaM2,
-          perimeterM,
-          vertexCount: points.length,
-          installableSets: 0,
-          bracketSpacingM: BRACKET_SPACING,
-          layoutStrategy: result.error || 'optimization failed',
-        };
+        const fallbackMeasurement = createMeasurement(
+          grossAreaM2, perimeterM, points.length, BRACKET_SPACING, 0, result.error || 'optimization failed',
+        );
         setPolygonMeasurement(fallbackMeasurement);
         onAreaMeasured?.(fallbackMeasurement);
       }
     } catch (err) {
       // 网络错误等，回退
-      const errorMeasurement: SiteAreaMeasurementResult = {
-        grossAreaM2,
-        usableAreaM2: grossAreaM2,
-        perimeterM,
-        vertexCount: points.length,
-        installableSets: 0,
-        bracketSpacingM: BRACKET_SPACING,
-        layoutStrategy: 'backend unavailable',
-      };
+      const errorMeasurement = createMeasurement(
+        grossAreaM2, perimeterM, points.length, BRACKET_SPACING, 0, 'backend unavailable',
+      );
       setPolygonMeasurement(errorMeasurement);
       onAreaMeasured?.(errorMeasurement);
     } finally {
@@ -1266,33 +1314,26 @@ export default function SiteAreaMap({
       draggable: true,
     }).addTo(map);
 
-    const onMapClick = (event: L.LeafletMouseEvent) => {
-      if (modeRef.current === 'select') {
-        void handleSiteSelectionRef.current(event.latlng);
+    const handleLineMapClick = (latlng: LatLng) => {
+      const start = lineStartRef.current;
+      if (!start) {
+        lineStartRef.current = latlng;
+        lineRef.current?.remove();
+        lineRef.current = L.polyline([latlng], {
+          color: '#f59e0b',
+          weight: MEASURE_STROKE_WIDTH,
+          dashArray: '6 6',
+        }).addTo(map);
+        setLineMeasurement(null);
         return;
       }
+      lineRef.current?.setLatLngs([start, latlng]);
+      lineRef.current?.setStyle({ dashArray: undefined });
+      setLineMeasurement(start.distanceTo(latlng));
+      lineStartRef.current = null;
+    };
 
-      if (modeRef.current === 'line') {
-        if (!lineStartRef.current) {
-          lineStartRef.current = event.latlng;
-          lineRef.current?.remove();
-          lineRef.current = L.polyline([event.latlng], {
-            color: '#f59e0b',
-            weight: MEASURE_STROKE_WIDTH,
-            dashArray: '6 6',
-          }).addTo(map);
-          setLineMeasurement(null);
-          return;
-        }
-
-        const points = [lineStartRef.current, event.latlng];
-        lineRef.current?.setLatLngs(points);
-        lineRef.current?.setStyle({ dashArray: undefined });
-        setLineMeasurement(lineStartRef.current.distanceTo(event.latlng));
-        lineStartRef.current = null;
-        return;
-      }
-
+    const handlePolygonMapClick = (latlng: LatLng) => {
       if (polygonClosedRef.current) {
         polygonClosedRef.current = false;
         polygonPointsRef.current = [];
@@ -1305,10 +1346,16 @@ export default function SiteAreaMap({
         setPolygonDraftCount(0);
       }
 
-      polygonPointsRef.current = [...polygonPointsRef.current, event.latlng];
+      polygonPointsRef.current = [...polygonPointsRef.current, latlng];
       setPolygonDraftCount(polygonPointsRef.current.length);
       setPolygonMeasurement(null);
       updateDraftPolyline();
+    };
+
+    const onMapClick = (event: L.LeafletMouseEvent) => {
+      if (modeRef.current === 'select') void handleSiteSelectionRef.current(event.latlng);
+      if (modeRef.current === 'line') handleLineMapClick(event.latlng);
+      if (modeRef.current === 'polygon') handlePolygonMapClick(event.latlng);
     };
 
     const onMapMouseMove = (event: L.LeafletMouseEvent) => {
@@ -1402,112 +1449,35 @@ export default function SiteAreaMap({
     <div className="site-area-map">
       <div ref={mapContainerRef} className="site-area-map__canvas" />
 
-      <div className="site-area-map__toolbar">
-        <button
-          type="button"
-          className={`site-area-map__tool ${mode === 'select' ? 'is-active' : ''}`}
-          onClick={() => switchMode('select')}
-        >
-          {text.setSite}
-        </button>
-        <button
-          type="button"
-          className={`site-area-map__tool ${mode === 'line' ? 'is-active' : ''}`}
-          onClick={() => switchMode('line')}
-        >
-          {text.measureLine}
-        </button>
-        <button
-          type="button"
-          className={`site-area-map__tool ${mode === 'polygon' ? 'is-active' : ''}`}
-          onClick={() => switchMode('polygon')}
-        >
-          {text.measureArea}
-        </button>
-        {mode === 'polygon' && (
-          <button
-            type="button"
-            className="site-area-map__tool is-secondary"
-            onClick={finishPolygon}
-            disabled={polygonDraftCount < 3 || layoutLoading}
-          >
-            {layoutLoading ? (lang === 'en' ? 'Optimizing...' : '求解中...') : text.finishArea}
-          </button>
-        )}
-        <button type="button" className="site-area-map__tool is-secondary" onClick={clearMeasurements}>
-          {text.reset}
-        </button>
-      </div>
+      <MapToolbar
+        mode={mode}
+        text={text}
+        polygonDraftCount={polygonDraftCount}
+        layoutLoading={layoutLoading}
+        lang={lang as 'en' | 'zh'}
+        onSwitchMode={switchMode}
+        onFinishPolygon={() => void finishPolygon()}
+        onReset={clearMeasurements}
+      />
 
       <div className="site-area-map__panel">
         <div className="site-area-map__panel-title">{text.mapTools}</div>
 
-        <div className="site-area-map__metrics">
-          <div>
-            <span>{text.selectedSite}</span>
-            <strong>{currentSiteLabel}</strong>
-          </div>
-          {hasCoords && (
-            <div>
-              <span>{text.coordinates}</span>
-              <strong>{formatCoordinateLabel(latitude as number, longitude as number)}</strong>
-            </div>
-          )}
-          {lineMeasurement != null && (
-            <div>
-              <span>{text.lineDistance}</span>
-              <strong>{formatDistance(lineMeasurement)}</strong>
-            </div>
-          )}
-          {(polygonMeasurement || grossAreaM2 != null) && (
-            <div>
-                <span>{labels.measuredArea}</span>
-                <strong>{formatAreaDisplay(polygonMeasurement?.grossAreaM2 ?? (grossAreaM2 as number))}</strong>
-            </div>
-          )}
-          {showLayoutArea && (polygonMeasurement || availableAreaM2 != null) && (
-            <div>
-                <span>{labels.usableArea}</span>
-                <strong>{formatAreaDisplay(polygonMeasurement?.usableAreaM2 ?? (availableAreaM2 as number))}</strong>
-            </div>
-          )}
-          {(polygonMeasurement || maxBracketSetsByLayout != null) && (
-            <div>
-                <span>{labels.installableSets}</span>
-              <strong>{polygonMeasurement?.installableSets ?? maxBracketSetsByLayout}</strong>
-            </div>
-          )}
-          {polygonMeasurement && (
-            <div>
-                <span>{labels.perimeter}</span>
-              <strong>{formatDistance(polygonMeasurement.perimeterM)}</strong>
-            </div>
-          )}
-          {polygonMeasurement && (
-            <div>
-                <span>{labels.setback}</span>
-              <strong>{formatDistance(polygonMeasurement.bracketSpacingM)}</strong>
-            </div>
-          )}
-          {polygonMeasurement && (
-            <div>
-                <span>{labels.bracketFootprint}</span>
-                <strong>{formatBracketFootprint(BRACKET_LENGTH_M, BRACKET_WIDTH_M)}</strong>
-            </div>
-          )}
-          {polygonMeasurement && (
-            <div>
-                <span>{labels.vertices}</span>
-              <strong>{polygonMeasurement.vertexCount}</strong>
-            </div>
-          )}
-          {polygonMeasurement?.layoutStrategy && (
-            <div>
-                <span>{labels.layoutStrategy}</span>
-                <strong>{localizeLayoutStrategy(polygonMeasurement.layoutStrategy, lang as 'en' | 'zh')}</strong>
-            </div>
-          )}
-        </div>
+        <MapMetrics
+          text={text}
+          labels={labels}
+          currentSiteLabel={currentSiteLabel}
+          coordinates={hasCoords ? formatCoordinateLabel(latitude as number, longitude as number) : null}
+          lineMeasurement={lineMeasurement}
+          polygonMeasurement={polygonMeasurement}
+          grossAreaM2={grossAreaM2}
+          availableAreaM2={availableAreaM2}
+          maxBracketSetsByLayout={maxBracketSetsByLayout}
+          showLayoutArea={showLayoutArea}
+          bracketLengthM={BRACKET_LENGTH_M}
+          bracketWidthM={BRACKET_WIDTH_M}
+          lang={lang as 'en' | 'zh'}
+        />
 
         {geoError && <div className="site-area-map__geo-error">{geoError}</div>}
 

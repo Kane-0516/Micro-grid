@@ -49,6 +49,199 @@ function goodCountRange(pvKw: number, invKw: number): [number, number] {
   return [lo, Math.min(hi, MAX_COUNT)];
 }
 
+type Lang = 'zh' | 'en';
+
+function getCountOptions(low: number, high: number): number[] {
+  return Array.from(
+    { length: Math.min(MAX_COUNT, high + 3) - Math.max(1, low - 2) + 1 },
+    (_, index) => Math.max(1, low - 2) + index,
+  );
+}
+
+function getSizePresentation(selected: boolean, recommended: boolean) {
+  if (selected) return { border: '#1a365d', background: '#ebf4ff', color: '#1a365d' };
+  if (recommended) return { border: 'var(--theme-tone-border)', background: 'var(--theme-tone-bg)', color: '#1a365d' };
+  return { border: '#e2e8f0', background: 'white', color: '#718096' };
+}
+
+function getSizeRangeLabel(low: number, high: number, lang: Lang) {
+  const unit = lang === 'en' ? (low === high ? 'unit' : 'units') : '台';
+  return low === high ? `${low} ${unit}` : `${low}–${high} ${unit}`;
+}
+
+function InverterSizeCard({
+  kw, pvCapacityKw, selected, lang, onSelect,
+}: {
+  kw: number;
+  pvCapacityKw: number;
+  selected: boolean;
+  lang: Lang;
+  onSelect: (kw: number) => void;
+}) {
+  const [low, high] = goodCountRange(pvCapacityKw, kw);
+  const recommended = low <= high;
+  const presentation = getSizePresentation(selected, recommended);
+  return (
+    <div
+      onClick={() => onSelect(kw)}
+      style={{
+        padding: '0.95rem 0.7rem', textAlign: 'center',
+        border: `2px solid ${presentation.border}`,
+        borderRadius: '10px', cursor: 'pointer',
+        background: presentation.background,
+        transition: 'all 0.15s', minHeight: '86px', display: 'flex',
+        flexDirection: 'column', justifyContent: 'center', opacity: recommended ? 1 : 0.65,
+      }}
+    >
+      <div style={{ fontWeight: 800, fontSize: '1.1rem', color: presentation.color }}>{kw} kW</div>
+      {recommended ? (
+        <div style={{ fontSize: '0.65rem', color: '#718096', marginTop: '0.1rem' }}>{getSizeRangeLabel(low, high, lang)}</div>
+      ) : (
+        <div style={{ fontSize: '0.6rem', color: 'var(--theme-tone-warm-text)', marginTop: '0.1rem' }}>{lang === 'en' ? '⚠ off-range' : '⚠ 超范围'}</div>
+      )}
+    </div>
+  );
+}
+
+function InverterSizeGrid({
+  pvCapacityKw, selectedKw, lang, onSelect,
+}: {
+  pvCapacityKw: number;
+  selectedKw: number;
+  lang: Lang;
+  onSelect: (kw: number) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '0.65rem' }}>
+      {INVERTER_SIZES.map(kw => (
+        <InverterSizeCard key={kw} kw={kw} pvCapacityKw={pvCapacityKw} selected={selectedKw === kw} lang={lang} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
+function getCountPresentation(selected: boolean, good: boolean) {
+  if (selected) return { border: '#1a365d', background: '#ebf4ff' };
+  if (good) return { border: 'var(--theme-tone-border)', background: 'var(--theme-tone-bg)' };
+  return { border: '#e2e8f0', background: 'white' };
+}
+
+function getCountBadge(good: boolean, lang: Lang) {
+  if (good) return { background: 'var(--theme-brand-700)', color: 'white', label: lang === 'en' ? 'Good' : '合理' };
+  return { background: '#e2e8f0', color: '#718096', label: lang === 'en' ? 'Off-range' : '超范围' };
+}
+
+function getRatioMarker(status: RatioStatus) {
+  if (status === 'good') return ' ✓';
+  if (status === 'low') return ' ↑';
+  return ' ↓';
+}
+
+function InverterCountCard({
+  count, pvCapacityKw, inverterKw, selected, lang, onSelect,
+}: {
+  count: number;
+  pvCapacityKw: number;
+  inverterKw: number;
+  selected: boolean;
+  lang: Lang;
+  onSelect: (count: number) => void;
+}) {
+  const status = getRatioStatus(pvCapacityKw, inverterKw, count);
+  const good = status === 'good';
+  const presentation = getCountPresentation(selected, good);
+  const badge = getCountBadge(good, lang);
+  return (
+    <div
+      onClick={() => onSelect(count)}
+      style={{ padding: '0.9rem 0.75rem', textAlign: 'center', border: `2px solid ${presentation.border}`, borderRadius: '10px', cursor: 'pointer', background: presentation.background, transition: 'all 0.15s', position: 'relative', minHeight: '92px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}
+    >
+      {!selected && (
+        <div style={{ position: 'absolute', top: '-8px', left: '50%', transform: 'translateX(-50%)', fontSize: '0.58rem', fontWeight: 700, padding: '0.08rem 0.4rem', background: badge.background, color: badge.color, borderRadius: '8px', whiteSpace: 'nowrap' }}>{badge.label}</div>
+      )}
+      <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1a365d' }}>{count}</div>
+      <div style={{ fontSize: '0.7rem', color: '#718096' }}>{lang === 'en' ? 'units' : '台'}</div>
+      <div style={{ fontSize: '0.68rem', fontWeight: 600, marginTop: '0.2rem', color: statusColor[status] }}>
+        {(pvCapacityKw / (inverterKw * count)).toFixed(2)}×{getRatioMarker(status)}
+      </div>
+    </div>
+  );
+}
+
+function InverterCountGrid({
+  options, pvCapacityKw, inverterKw, selectedCount, lang, onSelect,
+}: {
+  options: number[];
+  pvCapacityKw: number;
+  inverterKw: number;
+  selectedCount: number;
+  lang: Lang;
+  onSelect: (count: number) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: '0.7rem' }}>
+      {options.map(count => (
+        <InverterCountCard
+          key={count}
+          count={count}
+          pvCapacityKw={pvCapacityKw}
+          inverterKw={inverterKw}
+          selected={selectedCount === count}
+          lang={lang}
+          onSelect={onSelect}
+        />
+      ))}
+    </div>
+  );
+}
+
+function InverterSummary({
+  inverterKw, count, pvCapacityKw, lang,
+}: {
+  inverterKw: number;
+  count: number;
+  pvCapacityKw: number;
+  lang: Lang;
+}) {
+  const status = getRatioStatus(pvCapacityKw, inverterKw, count);
+  const ratio = (pvCapacityKw / (inverterKw * count)).toFixed(2);
+  const trays = Math.ceil(count / INVERTERS_PER_TRAY);
+  const statusLabel: Record<RatioStatus, { zh: string; en: string }> = {
+    good: { zh: '✓ 容配比合理', en: '✓ Ratio OK' },
+    low: { zh: '↑ 光伏偏少', en: '↑ PV under-sized' },
+    high: { zh: '↓ 光伏偏多', en: '↓ PV over-sized' },
+    none: { zh: '—', en: '—' },
+  };
+  const metrics = [
+    { label: lang === 'en' ? 'Inverter Spec' : '单台规格', value: `${inverterKw} kW`, color: '#1a365d' },
+    { label: lang === 'en' ? 'Quantity' : '台数', value: `${count} ${lang === 'en' ? 'units' : '台'}`, color: '#1a365d' },
+    { label: lang === 'en' ? 'Total Inverter Power' : '逆变器总功率', value: `${(inverterKw * count).toFixed(1)} kW`, color: 'var(--theme-brand-700)' },
+    { label: lang === 'en' ? 'PV/Inv Ratio' : '容配比', value: `${ratio}×`, color: statusColor[status] },
+    { label: lang === 'en' ? 'Integrated Trays' : '一体化托盘数', value: `${trays} ${lang === 'en' ? 'trays' : '个'}`, color: 'var(--theme-steel-700)' },
+  ];
+  return (
+    <div style={{ padding: '1rem 1.25rem', background: status === 'good' ? 'var(--theme-tone-bg)' : 'var(--theme-tone-warm-bg)', border: `1px solid ${status === 'good' ? 'var(--theme-tone-border)' : 'var(--theme-tone-warm-border)'}`, borderLeft: `4px solid ${status === 'good' ? 'var(--theme-tone-accent)' : 'var(--theme-tone-warm-accent)'}`, borderRadius: '10px' }}>
+      <div style={{ fontWeight: 700, color: '#2d3748', marginBottom: '0.75rem' }}>{lang === 'en' ? 'Configuration Summary' : '配置汇总'}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '0.6rem' }}>
+        {metrics.map(metric => (
+          <div key={metric.label} style={{ textAlign: 'center', background: 'white', borderRadius: '8px', padding: '0.6rem' }}>
+            <div style={{ fontSize: '1.15rem', fontWeight: 800, color: metric.color }}>{metric.value}</div>
+            <div style={{ fontSize: '0.7rem', color: '#718096' }}>{metric.label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: '0.75rem', fontSize: '0.82rem', color: statusColor[status], fontWeight: 600 }}>
+        {lang === 'en' ? `PV/Inverter ratio: ${ratio}× — ${statusLabel[status].en}` : `容配比：${ratio}× — ${statusLabel[status].zh}`}
+      </div>
+      <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#4a5568', padding: '0.55rem 0.8rem', background: '#f7fafc', borderRadius: '6px', lineHeight: 1.6 }}>
+        {lang === 'en'
+          ? `Each integrated tray holds up to ${INVERTERS_PER_TRAY} inverters → ${count} inverter(s) require ${trays} tray(s). Each tray supports up to 16 battery packs.`
+          : `每个一体化托盘最多容纳 ${INVERTERS_PER_TRAY} 台逆变器 → ${count} 台逆变器需要 ${trays} 个托盘，每个托盘最多配 16 个电池包。`}
+      </div>
+    </div>
+  );
+}
+
 export default function StepDIYInverter({
   inverterKw,
   inverterCount,
@@ -107,23 +300,7 @@ export default function StepDIYInverter({
     : [1, MAX_COUNT];
 
   // Show counts: good range + 2 on each side for context
-  const countOptions: number[] = [];
-  for (let c = Math.max(1, countLo - 2); c <= Math.min(MAX_COUNT, countHi + 3); c++) {
-    countOptions.push(c);
-  }
-
-  const ratioStatus = getRatioStatus(pvCapacityKw, selKw, selCount);
-  const actualRatio = selKw > 0 && selCount > 0
-    ? (pvCapacityKw / (selKw * selCount)).toFixed(2)
-    : '—';
-  const trayCount = selCount > 0 ? Math.ceil(selCount / INVERTERS_PER_TRAY) : 0;
-
-  const statusLabel: Record<RatioStatus, { zh: string; en: string }> = {
-    good: { zh: '✓ 容配比合理',  en: '✓ Ratio OK' },
-    low:  { zh: '↑ 光伏偏少',     en: '↑ PV under-sized' },
-    high: { zh: '↓ 光伏偏多',     en: '↓ PV over-sized' },
-    none: { zh: '—',              en: '—' },
-  };
+  const countOptions = getCountOptions(countLo, countHi);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4rem' }}>
@@ -172,56 +349,12 @@ export default function StepDIYInverter({
                 ? '🟢 Recommended range · All sizes are selectable; out-of-range options will show a warning.'
                 : '🟢 绿色 = 推荐范围  ·  所有规格均可选，超出范围会显示提醒，不影响方案生成。'}
             </div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
-                gap: '0.65rem',
-              }}
-            >
-              {INVERTER_SIZES.map(kw => {
-                const [lo, hi] = goodCountRange(pvCapacityKw, kw);
-                const hasGoodRange = lo <= hi;
-                const isSelected   = selKw === kw;
-                return (
-                  <div
-                    key={kw}
-                    onClick={() => handlePickKw(kw)}
-                    style={{
-                      padding: '0.95rem 0.7rem',
-                      textAlign: 'center',
-                      border: `2px solid ${isSelected ? '#1a365d' : hasGoodRange ? 'var(--theme-tone-border)' : '#e2e8f0'}`,
-                      borderRadius: '10px', cursor: 'pointer',
-                      background: isSelected ? '#ebf4ff' : hasGoodRange ? 'var(--theme-tone-bg)' : 'white',
-                      transition: 'all 0.15s',
-                      minHeight: '86px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      // 非推荐规格：轻微降低，但仍完全可点
-                      opacity: hasGoodRange ? 1 : 0.65,
-                    }}
-                  >
-                    <div style={{ fontWeight: 800, fontSize: '1.1rem', color: isSelected ? '#1a365d' : hasGoodRange ? '#1a365d' : '#718096' }}>
-                      {kw} kW
-                    </div>
-                    {hasGoodRange
-                      ? (
-                        <div style={{ fontSize: '0.65rem', color: '#718096', marginTop: '0.1rem' }}>
-                          {lo === hi
-                            ? `${lo} ${lang === 'en' ? 'unit' : '台'}`
-                            : `${lo}–${hi} ${lang === 'en' ? 'units' : '台'}`}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: '0.6rem', color: 'var(--theme-tone-warm-text)', marginTop: '0.1rem' }}>
-                          {lang === 'en' ? '⚠ off-range' : '⚠ 超范围'}
-                        </div>
-                      )
-                    }
-                  </div>
-                );
-              })}
-            </div>
+            <InverterSizeGrid
+              pvCapacityKw={pvCapacityKw}
+              selectedKw={selKw}
+              lang={lang}
+              onSelect={handlePickKw}
+            />
           </>
         )}
 
@@ -251,118 +384,20 @@ export default function StepDIYInverter({
               ? '🟢 Recommended · You may also select counts outside the range.'
               : '🟢 绿色 = 推荐台数  ·  也可自由选择范围外的台数，系统会说明影响。'}
           </div>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(6, minmax(0, 1fr))',
-              gap: '0.7rem',
-            }}
-          >
-            {countOptions.map(count => {
-              const status = getRatioStatus(pvCapacityKw, selKw, count);
-              const isGood = status === 'good';
-              const isSel  = selCount === count;
-              const ratio  = (pvCapacityKw / (selKw * count)).toFixed(2);
-              return (
-                <div
-                  key={count}
-                  onClick={() => handlePickCount(count)}
-                  style={{
-                    padding: '0.9rem 0.75rem',
-                    textAlign: 'center',
-                    border: `2px solid ${isSel ? '#1a365d' : isGood ? 'var(--theme-tone-border)' : '#e2e8f0'}`,
-                    borderRadius: '10px', cursor: 'pointer',
-                    background: isSel ? '#ebf4ff' : isGood ? 'var(--theme-tone-bg)' : 'white',
-                    transition: 'all 0.15s',
-                    position: 'relative',
-                    minHeight: '92px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {isGood && !isSel && (
-                    <div style={{
-                      position: 'absolute', top: '-8px', left: '50%', transform: 'translateX(-50%)',
-                      fontSize: '0.58rem', fontWeight: 700, padding: '0.08rem 0.4rem',
-                      background: 'var(--theme-brand-700)', color: 'white', borderRadius: '8px', whiteSpace: 'nowrap',
-                    }}>
-                      {lang === 'en' ? 'Good' : '合理'}
-                    </div>
-                  )}
-                  {!isGood && !isSel && (
-                    <div style={{
-                      position: 'absolute', top: '-8px', left: '50%', transform: 'translateX(-50%)',
-                      fontSize: '0.58rem', fontWeight: 700, padding: '0.08rem 0.4rem',
-                      background: '#e2e8f0', color: '#718096', borderRadius: '8px', whiteSpace: 'nowrap',
-                    }}>
-                      {lang === 'en' ? 'Off-range' : '超范围'}
-                    </div>
-                  )}
-                  <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1a365d' }}>{count}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#718096' }}>{lang === 'en' ? 'units' : '台'}</div>
-                  <div style={{
-                    fontSize: '0.68rem', fontWeight: 600, marginTop: '0.2rem',
-                    color: statusColor[status],
-                  }}>
-                    {ratio}×{status === 'good' ? ' ✓' : status === 'low' ? ' ↑' : ' ↓'}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <InverterCountGrid
+            options={countOptions}
+            pvCapacityKw={pvCapacityKw}
+            inverterKw={selKw}
+            selectedCount={selCount}
+            lang={lang}
+            onSelect={handlePickCount}
+          />
         </section>
       )}
 
       {/* ── 配置汇总 ── */}
       {selKw > 0 && selCount > 0 && (
-        <div style={{
-          padding: '1rem 1.25rem',
-          background: ratioStatus === 'good' ? 'var(--theme-tone-bg)' : 'var(--theme-tone-warm-bg)',
-          border: `1px solid ${ratioStatus === 'good' ? 'var(--theme-tone-border)' : 'var(--theme-tone-warm-border)'}`,
-          borderLeft: `4px solid ${ratioStatus === 'good' ? 'var(--theme-tone-accent)' : 'var(--theme-tone-warm-accent)'}`,
-          borderRadius: '10px',
-        }}>
-          <div style={{ fontWeight: 700, color: '#2d3748', marginBottom: '0.75rem' }}>
-            {lang === 'en' ? 'Configuration Summary' : '配置汇总'}
-          </div>
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-            gap: '0.6rem',
-          }}>
-            {[
-              { label: lang === 'en' ? 'Inverter Spec'       : '单台规格',         value: `${selKw} kW`,                                          color: '#1a365d' },
-              { label: lang === 'en' ? 'Quantity'            : '台数',             value: `${selCount} ${lang === 'en' ? 'units' : '台'}`,         color: '#1a365d' },
-              { label: lang === 'en' ? 'Total Inverter Power': '逆变器总功率',     value: `${(selKw * selCount).toFixed(1)} kW`,                   color: 'var(--theme-brand-700)' },
-              { label: lang === 'en' ? 'PV/Inv Ratio'        : '容配比',           value: `${actualRatio}×`,                                      color: statusColor[ratioStatus] },
-              { label: lang === 'en' ? 'Integrated Trays'    : '一体化托盘数',     value: `${trayCount} ${lang === 'en' ? 'trays' : '个'}`,        color: 'var(--theme-steel-700)' },
-            ].map(m => (
-              <div key={m.label} style={{
-                textAlign: 'center', background: 'white',
-                borderRadius: '8px', padding: '0.6rem',
-              }}>
-                <div style={{ fontSize: '1.15rem', fontWeight: 800, color: m.color }}>{m.value}</div>
-                <div style={{ fontSize: '0.7rem', color: '#718096' }}>{m.label}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{
-            marginTop: '0.75rem', fontSize: '0.82rem',
-            color: statusColor[ratioStatus], fontWeight: 600,
-          }}>
-            {lang === 'en'
-              ? `PV/Inverter ratio: ${actualRatio}× — ${statusLabel[ratioStatus].en}`
-              : `容配比：${actualRatio}× — ${statusLabel[ratioStatus].zh}`}
-          </div>
-          <div style={{
-            marginTop: '0.5rem', fontSize: '0.8rem', color: '#4a5568',
-            padding: '0.55rem 0.8rem', background: '#f7fafc', borderRadius: '6px', lineHeight: 1.6,
-          }}>
-            {lang === 'en'
-              ? `Each integrated tray holds up to ${INVERTERS_PER_TRAY} inverters → ${selCount} inverter(s) require ${trayCount} tray(s). Each tray supports up to 16 battery packs.`
-              : `每个一体化托盘最多容纳 ${INVERTERS_PER_TRAY} 台逆变器 → ${selCount} 台逆变器需要 ${trayCount} 个托盘，每个托盘最多配 16 个电池包。`}
-          </div>
-        </div>
+        <InverterSummary inverterKw={selKw} count={selCount} pvCapacityKw={pvCapacityKw} lang={lang} />
       )}
 
     </div>

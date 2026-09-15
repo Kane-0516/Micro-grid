@@ -1,7 +1,4 @@
-"""
-solution_pipeline.py
-====================
-微电网解决方案一站式流水线。
+"""微电网解决方案一站式流水线.
 
 用户只需提供最少输入（年用电量 + 柴发规格），即可自动完成：
   1. 系统容量规划（PV / 电池 / 柴油机）
@@ -28,26 +25,24 @@ HOMER Pro 仿真值的 PyPSA 替代分析
 
 from __future__ import annotations
 
-import math
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 import pypsa
 
-from app.services.microgrid_simulator import (
-    OffGridMicrogridSimulator,
-    generate_load_profile,
-    generate_pv_profile,
-)
 from app.services.economic_analysis import (
     DieselOMParams,
     MicrogridOMParams,
     ProjectParameters,
     SystemCapex,
     generate_solution_report,
+)
+from app.services.microgrid_simulator import (
+    OffGridMicrogridSimulator,
+    generate_load_profile,
+    generate_pv_profile,
 )
 
 warnings.filterwarnings("ignore")
@@ -57,10 +52,10 @@ warnings.filterwarnings("ignore")
 # 1. 柴油机规格 + 燃油消耗模型（替代 HOMER Pro 燃油仿真）
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DieselSpec:
-    """
-    柴油发电机规格及 HOMER Pro 线性燃油模型系数。
+    """柴油发电机规格及 HOMER Pro 线性燃油模型系数.
 
     HOMER Pro 线性燃油消耗模型：
         fuel(L/h) = F0 × P_rated(kW) + F1 × P_output(kW)
@@ -73,25 +68,29 @@ class DieselSpec:
         fuel = 0.08415×40 + 0.246×40 = 3.366 + 9.840 = 13.206 L/h
         效率  = 40 kW / 13.206 L/h = 3.03 kWh/L
     """
-    capacity_kw:     float = 40.0    # 额定容量（kW）
-    min_load_pct:    float = 0.30    # 最小技术出力比（30%）
+
+    capacity_kw: float = 40.0  # 额定容量（kW）
+    min_load_pct: float = 0.30  # 最小技术出力比（30%）
     # HOMER 线性燃油系数
-    F0: float = 0.08415              # 空载油耗系数（L/h/kW_rated）
-    F1: float = 0.246                # 边际油耗系数（L/kWh）
+    F0: float = 0.08415  # 空载油耗系数（L/h/kW_rated）
+    F1: float = 0.246  # 边际油耗系数（L/kWh）
 
     @property
     def min_load_kw(self) -> float:
+        """最小技术出力（kW）."""
         return self.capacity_kw * self.min_load_pct
 
     @property
     def full_load_efficiency_kwh_per_L(self) -> float:
-        """满负荷等效发电效率（kWh/L）"""
+        """满负荷等效发电效率（kWh/L）."""
         fuel_rate = self.F0 * self.capacity_kw + self.F1 * self.capacity_kw
         return self.capacity_kw / fuel_rate
 
     @staticmethod
-    def from_rated_power(capacity_kw: float, min_load_pct: float = 0.25) -> "DieselSpec":
-        """根据额定功率创建规格（使用HOMER典型系数）"""
+    def from_rated_power(
+        capacity_kw: float, min_load_pct: float = 0.25
+    ) -> "DieselSpec":
+        """根据额定功率创建规格（使用HOMER典型系数）."""
         return DieselSpec(capacity_kw=capacity_kw, min_load_pct=min_load_pct)
 
     def calibrate_from_homer(
@@ -100,25 +99,24 @@ class DieselSpec:
         annual_liters: float,
         run_hours: float,
     ) -> "DieselSpec":
-        """
-        从 HOMER Pro 已知年消耗量反推 F1 系数（保持 F0 不变）。
+        """从 HOMER Pro 已知年消耗量反推 F1 系数（保持 F0 不变）.
 
         用于将已有 HOMER Pro 结果对齐到本模块的燃油模型。
 
-        Parameters
-        ----------
-        annual_kwh    : HOMER Pro 给出的年柴油发电量（kWh）
-        annual_liters : HOMER Pro 给出的年燃油消耗量（升）
-        run_hours     : 年运行小时数
+        Args:
+            annual_kwh: HOMER Pro 给出的年柴油发电量（kWh）。
+            annual_liters: HOMER Pro 给出的年燃油消耗量（升）。
+            run_hours: 年运行小时数。
 
-        Returns
-        -------
-        DieselSpec  校准后的新实例
+        Returns:
+            校准后的新 DieselSpec 实例。
         """
         # annual_liters = F0 × capacity × run_hours + F1 × annual_kwh
         # => F1 = (annual_liters - F0 × capacity × run_hours) / annual_kwh
-        F1_cal = (annual_liters - self.F0 * self.capacity_kw * run_hours) / annual_kwh
-        F1_cal = max(0.05, F1_cal)   # 防止不合理负值
+        F1_cal = (
+            annual_liters - self.F0 * self.capacity_kw * run_hours
+        ) / annual_kwh
+        F1_cal = max(0.05, F1_cal)  # 防止不合理负值
         return DieselSpec(
             capacity_kw=self.capacity_kw,
             min_load_pct=self.min_load_pct,
@@ -128,8 +126,7 @@ class DieselSpec:
 
 
 class DieselFuelModel:
-    """
-    HOMER Pro 线性燃油消耗模型。
+    """HOMER Pro 线性燃油消耗模型.
 
     基于 PyPSA 逐小时调度结果计算年燃油消耗量（升），
     直接替代 HOMER Pro 的燃油仿真输出。
@@ -146,19 +143,16 @@ class DieselFuelModel:
         power_kw: pd.Series,
         spec: DieselSpec,
     ) -> pd.Series:
-        """
-        根据逐小时功率输出计算每小时燃油消耗（L/h）。
+        """根据逐小时功率输出计算每小时燃油消耗（L/h）.
 
         只在发电机运行时（P > 0.01 kW）计算；停机时油耗为 0。
 
-        Parameters
-        ----------
-        power_kw : pd.Series   逐小时发电功率（kW），来自 PyPSA 优化结果
-        spec     : DieselSpec  发电机规格
+        Args:
+            power_kw: 逐小时发电功率（kW），来自 PyPSA 优化结果。
+            spec: 发电机规格。
 
-        Returns
-        -------
-        pd.Series  逐小时燃油消耗（L/h × 1h = L）
+        Returns:
+            逐小时燃油消耗（L/h × 1h = L）。
         """
         running = power_kw > 0.01
         fuel = pd.Series(0.0, index=power_kw.index)
@@ -170,12 +164,12 @@ class DieselFuelModel:
         power_kw: pd.Series,
         spec: DieselSpec,
     ) -> float:
-        """年总燃油消耗量（升）"""
+        """年总燃油消耗量（升）."""
         return float(DieselFuelModel.hourly_fuel_L(power_kw, spec).sum())
 
     @staticmethod
     def run_hours(power_kw: pd.Series, threshold_kw: float = 0.01) -> int:
-        """年运行小时数"""
+        """年运行小时数."""
         return int((power_kw > threshold_kw).sum())
 
     @staticmethod
@@ -183,7 +177,7 @@ class DieselFuelModel:
         annual_kwh: float,
         annual_liters: float,
     ) -> float:
-        """年平均发电效率（kWh/L）"""
+        """年平均发电效率（kWh/L）."""
         return annual_kwh / annual_liters if annual_liters > 0 else 0.0
 
 
@@ -191,9 +185,9 @@ class DieselFuelModel:
 # 2. 纯柴油发电机 PyPSA 仿真（替代 HOMER Pro A工况仿真）
 # ─────────────────────────────────────────────────────────────
 
+
 class DieselOnlySimulator:
-    """
-    纯柴油发电机系统 PyPSA 仿真（无光伏、无储能）。
+    """纯柴油发电机系统 PyPSA 仿真（无光伏、无储能）.
 
     用于替代 HOMER Pro 的 A工况（纯柴油）仿真，
     计算年用油量、年运行小时数等，与 OffGridMicrogridSimulator 输出格式对齐。
@@ -212,15 +206,21 @@ class DieselOnlySimulator:
         load_profile: pd.Series,
         verbose: bool = False,
     ):
-        self.spec   = diesel_spec
-        self.load   = load_profile
+        """Configure the diesel-only reference simulation.
+
+        Args:
+            diesel_spec: Diesel generator specification.
+            load_profile: Hourly load, in kW.
+            verbose: Whether to print PyPSA solver output.
+        """
+        self.spec = diesel_spec
+        self.load = load_profile
         self.verbose = verbose
 
     def run(self) -> dict:
-        """
-        运行纯柴油仿真。
+        """运行纯柴油仿真.
 
-        Returns
+        Returns:
         -------
         dict
             annual_diesel_kwh      : 年发电量（kWh）
@@ -234,24 +234,26 @@ class DieselOnlySimulator:
         n = pypsa.Network()
         n.set_snapshots(self.load.index)
 
-        n.add("Carrier", "AC",     co2_emissions=0)
+        n.add("Carrier", "AC", co2_emissions=0)
         n.add("Carrier", "diesel", co2_emissions=2.68)
         n.add("Bus", "AC_bus", carrier="AC", v_nom=0.4)
 
         # 柴油发电机（带最小出力约束）
         n.add(
-            "Generator", "Diesel",
+            "Generator",
+            "Diesel",
             bus="AC_bus",
             carrier="diesel",
             p_nom=self.spec.capacity_kw,
             p_min_pu=self.spec.min_load_pct,
-            marginal_cost=1.0,         # 任意正值，驱动优化
+            marginal_cost=1.0,  # 任意正值，驱动优化
             capital_cost=0,
         )
 
         # 弃电吸收（当柴油机在最小出力时多余电力）
         n.add(
-            "Generator", "Curtailment",
+            "Generator",
+            "Curtailment",
             bus="AC_bus",
             carrier="AC",
             p_nom=self.spec.capacity_kw * 2,
@@ -262,7 +264,8 @@ class DieselOnlySimulator:
 
         # 失负荷兜底（高成本，保证模型可行）
         n.add(
-            "Generator", "LoadShedding",
+            "Generator",
+            "LoadShedding",
             bus="AC_bus",
             carrier="AC",
             p_nom=self.load.max() * 1.5,
@@ -278,31 +281,40 @@ class DieselOnlySimulator:
         load_shed_kwh = n.generators_t.p.get(
             "LoadShedding", pd.Series(0, index=n.snapshots)
         ).sum()
-        curtail_kwh = abs(n.generators_t.p.get(
-            "Curtailment", pd.Series(0, index=n.snapshots)
-        ).clip(upper=0).sum())
+        curtail_kwh = abs(
+            n.generators_t.p.get("Curtailment", pd.Series(0, index=n.snapshots))
+            .clip(upper=0)
+            .sum()
+        )
 
         # 应用 HOMER 线性燃油模型
         annual_liters = DieselFuelModel.annual_fuel_L(diesel_series, self.spec)
-        annual_kwh    = float(diesel_series.sum())
-        run_hours     = DieselFuelModel.run_hours(diesel_series)
+        annual_kwh = float(diesel_series.sum())
+        run_hours = DieselFuelModel.run_hours(diesel_series)
 
         if self.verbose:
-            eff = DieselFuelModel.avg_efficiency_kwh_per_L(annual_kwh, annual_liters)
-            print(f"  [纯柴油仿真] 年发电: {annual_kwh:,.0f} kWh | "
-                  f"年油耗: {annual_liters:,.0f} L | "
-                  f"效率: {eff:.2f} kWh/L | "
-                  f"运行: {run_hours:,} h")
+            eff = DieselFuelModel.avg_efficiency_kwh_per_L(
+                annual_kwh, annual_liters
+            )
+            print(
+                f"  [纯柴油仿真] 年发电: {annual_kwh:,.0f} kWh | "
+                f"年油耗: {annual_liters:,.0f} L | "
+                f"效率: {eff:.2f} kWh/L | "
+                f"运行: {run_hours:,} h"
+            )
 
         return {
-            "annual_diesel_kwh":         round(annual_kwh,    1),
-            "annual_diesel_liters":       round(annual_liters, 0),
-            "diesel_run_hours":           run_hours,
-            "annual_load_kwh":            round(float(self.load.sum()), 1),
-            "annual_load_shed_kwh":       round(float(load_shed_kwh), 1),
-            "annual_curtailment_kwh":     round(float(curtail_kwh), 1),
-            "avg_efficiency_kwh_per_L":   round(
-                DieselFuelModel.avg_efficiency_kwh_per_L(annual_kwh, annual_liters), 3
+            "annual_diesel_kwh": round(annual_kwh, 1),
+            "annual_diesel_liters": round(annual_liters, 0),
+            "diesel_run_hours": run_hours,
+            "annual_load_kwh": round(float(self.load.sum()), 1),
+            "annual_load_shed_kwh": round(float(load_shed_kwh), 1),
+            "annual_curtailment_kwh": round(float(curtail_kwh), 1),
+            "avg_efficiency_kwh_per_L": round(
+                DieselFuelModel.avg_efficiency_kwh_per_L(
+                    annual_kwh, annual_liters
+                ),
+                3,
             ),
             "_diesel_series": diesel_series,
         }
@@ -312,9 +324,9 @@ class DieselOnlySimulator:
 # 3. 微电网双场景仿真引擎（完整替代 HOMER Pro）
 # ─────────────────────────────────────────────────────────────
 
+
 class MicrogridPyPSAEngine:
-    """
-    微电网双场景 PyPSA 仿真引擎。
+    """微电网双场景 PyPSA 仿真引擎.
 
     一次调用自动运行两个场景：
     - 场景 A（纯柴油）: 用 DieselOnlySimulator
@@ -345,17 +357,27 @@ class MicrogridPyPSAEngine:
         pv_profile: pd.Series,
         verbose: bool = True,
     ):
-        self.pv_kw        = pv_capacity_kw
-        self.bat_kwh      = battery_capacity_kwh
-        self.bat_kw       = battery_power_kw
-        self.diesel_spec  = diesel_spec
+        """Configure the dual-scenario (microgrid vs. diesel-only) run.
+
+        Args:
+            pv_capacity_kw: Installed PV capacity, in kW.
+            battery_capacity_kwh: Battery energy capacity, in kWh.
+            battery_power_kw: Battery inverter power limit, in kW.
+            diesel_spec: Diesel generator specification.
+            load_profile: Hourly load, in kW.
+            pv_profile: Hourly PV capacity factor (0~1).
+            verbose: Whether to print PyPSA solver output.
+        """
+        self.pv_kw = pv_capacity_kw
+        self.bat_kwh = battery_capacity_kwh
+        self.bat_kw = battery_power_kw
+        self.diesel_spec = diesel_spec
         self.load_profile = load_profile
-        self.pv_profile   = pv_profile
-        self.verbose      = verbose
+        self.pv_profile = pv_profile
+        self.verbose = verbose
 
     def run_microgrid_scenario(self) -> dict:
-        """
-        场景 B：运行微电网仿真（PV + 储能 + 柴油备用）。
+        """场景 B：运行微电网仿真（PV + 储能 + 柴油备用）.
 
         在 OffGridMicrogridSimulator 结果基础上增加燃油升数。
         """
@@ -375,27 +397,32 @@ class MicrogridPyPSAEngine:
         results = sim.run_simulation(solver_name="highs")
 
         # 从 PyPSA 结果提取柴油时序，应用 HOMER 线性燃油模型
-        diesel_series = results.get("_diesel_series", pd.Series(0.0, index=self.load_profile.index))
-        annual_liters = DieselFuelModel.annual_fuel_L(diesel_series, self.diesel_spec)
+        diesel_series = results.get(
+            "_diesel_series", pd.Series(0.0, index=self.load_profile.index)
+        )
+        annual_liters = DieselFuelModel.annual_fuel_L(
+            diesel_series, self.diesel_spec
+        )
 
         results["annual_diesel_liters"] = round(annual_liters, 0)
         results["avg_efficiency_kwh_per_L"] = round(
             DieselFuelModel.avg_efficiency_kwh_per_L(
                 results.get("annual_diesel_kwh", 0), annual_liters
-            ), 3
+            ),
+            3,
         )
 
         if self.verbose:
-            print(f"    太阳能占比: {results['solar_fraction']:.1f}% | "
-                  f"失负荷率: {results['loss_of_load_rate']:.3f}% | "
-                  f"柴油: {results['annual_diesel_kwh']:,.0f} kWh "
-                  f"= {annual_liters:,.0f} L")
+            print(
+                f"    太阳能占比: {results['solar_fraction']:.1f}% | "
+                f"失负荷率: {results['loss_of_load_rate']:.3f}% | "
+                f"柴油: {results['annual_diesel_kwh']:,.0f} kWh "
+                f"= {annual_liters:,.0f} L"
+            )
         return results
 
     def run_dieselonly_scenario(self) -> dict:
-        """
-        场景 A：运行纯柴油仿真（无光伏无储能）。
-        """
+        """场景 A：运行纯柴油仿真（无光伏无储能）."""
         if self.verbose:
             print("\n  [场景A - 纯柴油] 运行 PyPSA 仿真...")
 
@@ -412,33 +439,41 @@ class MicrogridPyPSAEngine:
         diesel_price_per_liter: float = 0.95,
         analysis_years: int = 10,
     ) -> tuple[ProjectParameters, dict, dict]:
-        """
-        运行双场景仿真，自动填充 ProjectParameters。
+        """运行双场景仿真，自动填充 ProjectParameters.
 
-        Returns
+        Returns:
         -------
         (ProjectParameters, microgrid_results, dieselonly_results)
         """
-        mg_results     = self.run_microgrid_scenario()
+        mg_results = self.run_microgrid_scenario()
         diesel_results = self.run_dieselonly_scenario()
 
         proj = ProjectParameters(
-            project_name             = project_name,
-            analysis_years           = analysis_years,
-            annual_load_kwh          = mg_results["annual_load_kwh"],
-            diesel_price_per_liter   = diesel_price_per_liter,
-            microgrid_diesel_liters  = mg_results["annual_diesel_liters"],
-            dieselonly_diesel_liters = diesel_results["annual_diesel_liters"],
+            project_name=project_name,
+            analysis_years=analysis_years,
+            annual_load_kwh=mg_results["annual_load_kwh"],
+            diesel_price_per_liter=diesel_price_per_liter,
+            microgrid_diesel_liters=mg_results["annual_diesel_liters"],
+            dieselonly_diesel_liters=diesel_results["annual_diesel_liters"],
         )
 
         if self.verbose:
-            print(f"\n  [仿真结果汇总]")
+            print("\n  [仿真结果汇总]")
             print(f"    年用电量       : {proj.annual_load_kwh:>10,.0f} kWh")
-            print(f"    微电网年油耗   : {proj.microgrid_diesel_liters:>10,.0f} 升 "
-                  f"(PyPSA→HOMER线性模型)")
-            print(f"    纯柴油年油耗   : {proj.dieselonly_diesel_liters:>10,.0f} 升 "
-                  f"(PyPSA→HOMER线性模型)")
-            print(f"    燃料节省       : {proj.dieselonly_diesel_liters - proj.microgrid_diesel_liters:>10,.0f} 升/年")
+            print(
+                f"    微电网年油耗   : "
+                f"{proj.microgrid_diesel_liters:>10,.0f} 升 "
+                "(PyPSA→HOMER线性模型)"
+            )
+            print(
+                f"    纯柴油年油耗   : "
+                f"{proj.dieselonly_diesel_liters:>10,.0f} 升 "
+                "(PyPSA→HOMER线性模型)"
+            )
+            fuel_saving = (
+                proj.dieselonly_diesel_liters - proj.microgrid_diesel_liters
+            )
+            print(f"    燃料节省       : {fuel_saving:>10,.0f} 升/年")
 
         return proj, mg_results, diesel_results
 
@@ -447,23 +482,28 @@ class MicrogridPyPSAEngine:
 # 4. 系统容量自动规划（用户最少输入时）
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class CapexEstimator:
-    """
-    按系统容量自动估算 CAPEX（SystemCapex）。
+    """按系统容量自动估算 CAPEX（SystemCapex）.
 
     默认单价参考40kW案例实际数据标定，可自行调整。
     """
-    pv_usd_per_kw:        float = 320.0    # 光伏组件 $/kW（$0.32/W）
-    mounting_usd_per_kw:  float = 909.0    # 光伏支架 $/kW（含50%进口关税，来自案例）
-    battery_usd_per_kwh:  float = 310.0    # 储能系统 $/kWh（电池包，来自案例）
-    inverter_usd_per_kw:  float = 187.5    # 逆变器 $/kW（来自案例：$7,500/40kW × 1）
-    diesel_usd_per_kw:    float = 1_125.0  # 柴油机 $/kW（$45,000/40kW）
-    transport_rate:       float = 0.040    # 国际运输费（占设备费比例）
-    installation_usd:     float = 5_000.0  # 一次性安装费（固定）
-    accessory_rate:       float = 0.105    # 其他附件（占设备费比例）
-    other_initial_usd:    float = 4_200.0  # 其他初始费用（固定）
-    profit_margin:        float = 0.20     # 利润率
+
+    pv_usd_per_kw: float = 320.0  # 光伏组件 $/kW（$0.32/W）
+    mounting_usd_per_kw: float = (
+        909.0  # 光伏支架 $/kW（含50%进口关税，来自案例）
+    )
+    battery_usd_per_kwh: float = 310.0  # 储能系统 $/kWh（电池包，来自案例）
+    inverter_usd_per_kw: float = (
+        187.5  # 逆变器 $/kW（来自案例：$7,500/40kW × 1）
+    )
+    diesel_usd_per_kw: float = 1_125.0  # 柴油机 $/kW（$45,000/40kW）
+    transport_rate: float = 0.040  # 国际运输费（占设备费比例）
+    installation_usd: float = 5_000.0  # 一次性安装费（固定）
+    accessory_rate: float = 0.105  # 其他附件（占设备费比例）
+    other_initial_usd: float = 4_200.0  # 其他初始费用（固定）
+    profit_margin: float = 0.20  # 利润率
 
     def estimate(
         self,
@@ -472,48 +512,50 @@ class CapexEstimator:
         diesel_kw: float,
         inverter_kw: float | None = None,
     ) -> SystemCapex:
-        """
-        根据系统规格估算 SystemCapex。
+        """根据系统规格估算 SystemCapex.
 
-        Parameters
-        ----------
-        pv_kw        : 光伏装机容量（kW）
-        battery_kwh  : 电池容量（kWh）
-        diesel_kw    : 柴油机额定功率（kW），0 = 无
-        inverter_kw  : 逆变器总功率（kW），None = 与柴油机同等规格
+        Args:
+            pv_kw: 光伏装机容量（kW）。
+            battery_kwh: 电池容量（kWh）。
+            diesel_kw: 柴油机额定功率（kW），0 表示无柴油机。
+            inverter_kw: 逆变器总功率（kW）；None 时与柴油机同等规格。
 
-        Returns
-        -------
-        SystemCapex  可直接传入 generate_solution_report()
+        Returns:
+            可直接传入 generate_solution_report() 的 SystemCapex。
         """
         inv_kw = inverter_kw if inverter_kw else diesel_kw
 
-        pv_module_cost      = pv_kw    * self.pv_usd_per_kw
-        pv_mounting_cost    = pv_kw    * self.mounting_usd_per_kw
-        battery_cost        = battery_kwh * self.battery_usd_per_kwh
-        inverter_cost       = inv_kw   * self.inverter_usd_per_kw
-        diesel_cost         = diesel_kw * self.diesel_usd_per_kw
+        pv_module_cost = pv_kw * self.pv_usd_per_kw
+        pv_mounting_cost = pv_kw * self.mounting_usd_per_kw
+        battery_cost = battery_kwh * self.battery_usd_per_kwh
+        inverter_cost = inv_kw * self.inverter_usd_per_kw
+        diesel_cost = diesel_kw * self.diesel_usd_per_kw
 
-        equipment = pv_module_cost + pv_mounting_cost + battery_cost + inverter_cost + diesel_cost
-        transport  = equipment * self.transport_rate
-        accessory  = equipment * self.accessory_rate
+        equipment = (
+            pv_module_cost
+            + pv_mounting_cost
+            + battery_cost
+            + inverter_cost
+            + diesel_cost
+        )
+        transport = equipment * self.transport_rate
+        accessory = equipment * self.accessory_rate
 
         return SystemCapex(
-            pv_module_cost        = round(pv_module_cost, 2),
-            pv_mounting_cost      = round(pv_mounting_cost, 2),
-            energy_storage_cost   = round(battery_cost + inverter_cost, 2),
-            diesel_generator_cost = round(diesel_cost, 2),
-            intl_transport_cost   = round(transport, 2),
-            installation_cost     = round(self.installation_usd, 2),
-            accessory_cost        = round(accessory, 2),
-            other_initial_cost    = round(self.other_initial_usd, 2),
-            profit_margin         = self.profit_margin,
+            pv_module_cost=round(pv_module_cost, 2),
+            pv_mounting_cost=round(pv_mounting_cost, 2),
+            energy_storage_cost=round(battery_cost + inverter_cost, 2),
+            diesel_generator_cost=round(diesel_cost, 2),
+            intl_transport_cost=round(transport, 2),
+            installation_cost=round(self.installation_usd, 2),
+            accessory_cost=round(accessory, 2),
+            other_initial_cost=round(self.other_initial_usd, 2),
+            profit_margin=self.profit_margin,
         )
 
 
 class SystemSizer:
-    """
-    根据负载和约束条件自动规划系统容量。
+    """根据负载和约束条件自动规划系统容量.
 
     输出：PV 容量、电池容量（及功率）、逆变器容量。
     """
@@ -524,10 +566,9 @@ class SystemSizer:
         diesel_capacity_kw: float,
         latitude: float = 35.0,
         cloudy_day_autonomy: int = 2,
-        pv_oversize_factor: float = 1.25,   # 光伏过配系数（相对于电池充电需求）
+        pv_oversize_factor: float = 1.25,  # 光伏过配系数（相对于电池充电需求）
     ) -> dict:
-        """
-        自动规划系统容量。
+        """自动规划系统容量.
 
         逻辑
         ----
@@ -536,16 +577,16 @@ class SystemSizer:
         3. 峰值日照时数：根据纬度估算
         4. 光伏容量   = (日均用电量 / 峰值日照时数) × 过配系数
 
-        Returns
+        Returns:
         -------
         dict: pv_kw, battery_kwh, battery_kw, recommended_inverter_kw
         """
-        daily_kwh    = annual_load_kwh / 365
+        daily_kwh = annual_load_kwh / 365
         avg_power_kw = annual_load_kwh / 8760
 
         # 电池
         battery_kwh = daily_kwh * cloudy_day_autonomy
-        battery_kw  = battery_kwh / 4.0    # 4h 放电率
+        battery_kw = battery_kwh / 4.0  # 4h 放电率
 
         # 峰值日照时数（根据纬度简化估算）
         peak_sun_h = max(2.5, 5.5 - abs(latitude) * 0.025)
@@ -557,13 +598,13 @@ class SystemSizer:
         inverter_kw = avg_power_kw * 2.5
 
         return {
-            "pv_kw":              round(pv_kw, 1),
-            "battery_kwh":        round(battery_kwh, 1),
-            "battery_kw":         round(battery_kw, 1),
+            "pv_kw": round(pv_kw, 1),
+            "battery_kwh": round(battery_kwh, 1),
+            "battery_kw": round(battery_kw, 1),
             "recommended_inverter_kw": round(inverter_kw, 1),
-            "daily_load_kwh":     round(daily_kwh, 1),
-            "avg_power_kw":       round(avg_power_kw, 1),
-            "peak_sun_hours":     round(peak_sun_h, 2),
+            "daily_load_kwh": round(daily_kwh, 1),
+            "avg_power_kw": round(avg_power_kw, 1),
+            "peak_sun_hours": round(peak_sun_h, 2),
             "cloudy_day_autonomy": cloudy_day_autonomy,
         }
 
@@ -572,9 +613,9 @@ class SystemSizer:
 # 5. 完整解决方案流水线
 # ─────────────────────────────────────────────────────────────
 
+
 class FullSolutionPipeline:
-    """
-    微电网解决方案一站式流水线。
+    """微电网解决方案一站式流水线.
 
     用户最少只需提供：
         annual_load_kwh  —— 年用电量（kWh）
@@ -606,56 +647,83 @@ class FullSolutionPipeline:
         # ── 必填 ─────────────────────────────────────────────
         annual_load_kwh: float,
         diesel_capacity_kw: float = 40.0,
-
         # ── 系统规划（0 = 自动规划）─────────────────────────
-        pv_capacity_kw:       float = 0.0,
+        pv_capacity_kw: float = 0.0,
         battery_capacity_kwh: float = 0.0,
-        cloudy_day_autonomy:  int   = 2,
-
+        cloudy_day_autonomy: int = 2,
         # ── 地理 / 气象 ──────────────────────────────────────
-        latitude:   float = 35.0,
-        year:       int   = 2020,
-        load_type:  str   = "commercial",
-
+        latitude: float = 35.0,
+        year: int = 2020,
+        load_type: str = "commercial",
         # ── 柴油机参数 ───────────────────────────────────────
         diesel_spec: Optional[DieselSpec] = None,
-
         # ── 经济参数 ────────────────────────────────────────
         diesel_price_per_liter: float = 0.95,
-        analysis_years:         int   = 10,
-        project_name:           str   = "离网微电网项目",
-
+        analysis_years: int = 10,
+        project_name: str = "离网微电网项目",
         # ── 可选：覆盖自动 CAPEX 估算 ───────────────────────
-        capex:          Optional[SystemCapex]       = None,
-        capex_estimator: Optional[CapexEstimator]   = None,
-        mg_om:          Optional[MicrogridOMParams] = None,
-        diesel_om:      Optional[DieselOMParams]    = None,
-
+        capex: Optional[SystemCapex] = None,
+        capex_estimator: Optional[CapexEstimator] = None,
+        mg_om: Optional[MicrogridOMParams] = None,
+        diesel_om: Optional[DieselOMParams] = None,
         verbose: bool = True,
     ):
-        self.annual_load_kwh        = annual_load_kwh
-        self.diesel_capacity_kw     = diesel_capacity_kw
-        self.pv_capacity_kw         = pv_capacity_kw
-        self.battery_capacity_kwh   = battery_capacity_kwh
-        self.cloudy_day_autonomy    = cloudy_day_autonomy
-        self.latitude               = latitude
-        self.year                   = year
-        self.load_type              = load_type
-        self.diesel_spec            = diesel_spec or DieselSpec.from_rated_power(diesel_capacity_kw)
-        self.diesel_price           = diesel_price_per_liter
-        self.analysis_years         = analysis_years
-        self.project_name           = project_name
-        self.capex_override         = capex
-        self.capex_estimator        = capex_estimator or CapexEstimator()
-        self.mg_om                  = mg_om
-        self.diesel_om              = diesel_om
-        self.verbose                = verbose
+        """Configure the end-to-end microgrid solution pipeline.
+
+        Args:
+            annual_load_kwh: Annual load estimate, in kWh.
+            diesel_capacity_kw: Diesel generator capacity, in kW.
+            pv_capacity_kw: Installed PV capacity, in kW; 0 auto-sizes.
+            battery_capacity_kwh: Battery capacity, in kWh; 0 auto-sizes.
+            cloudy_day_autonomy: Days of autonomy to size the battery
+                for when auto-sizing.
+            latitude: Site latitude, for the PV output model.
+            year: Weather year to use for the PV output model.
+            load_type: Load category used to shape the estimated load
+                curve when annual_load_kwh is given without a profile.
+            diesel_spec: Diesel generator specification; derived from
+                diesel_capacity_kw when omitted.
+            diesel_price_per_liter: Diesel fuel price, in $/L.
+            analysis_years: Number of years to project economics over.
+            project_name: Project name shown in the generated report.
+            capex: Precomputed CAPEX breakdown; estimated when omitted.
+            capex_estimator: Custom CAPEX estimator; used when capex is
+                not given directly.
+            mg_om: Precomputed microgrid O&M parameters; estimated when
+                omitted.
+            diesel_om: Precomputed diesel O&M parameters; estimated
+                when omitted.
+            verbose: Whether to print pipeline progress and PyPSA
+                solver output.
+        """
+        self.annual_load_kwh = annual_load_kwh
+        self.diesel_capacity_kw = diesel_capacity_kw
+        self.pv_capacity_kw = pv_capacity_kw
+        self.battery_capacity_kwh = battery_capacity_kwh
+        self.cloudy_day_autonomy = cloudy_day_autonomy
+        self.latitude = latitude
+        self.year = year
+        self.load_type = load_type
+        self.diesel_spec = diesel_spec or DieselSpec.from_rated_power(
+            diesel_capacity_kw
+        )
+        self.diesel_price = diesel_price_per_liter
+        self.analysis_years = analysis_years
+        self.project_name = project_name
+        self.capex_override = capex
+        self.capex_estimator = capex_estimator or CapexEstimator()
+        self.mg_om = mg_om
+        self.diesel_om = diesel_om
+        self.verbose = verbose
+
+    def _log(self, message: str) -> None:
+        if self.verbose:
+            print(message)
 
     def run(self) -> dict:
-        """
-        执行完整流水线，返回完整解决方案报告字典。
+        """执行完整流水线，返回完整解决方案报告字典.
 
-        Returns
+        Returns:
         -------
         dict
             report             : str          格式化文本报告
@@ -666,40 +734,49 @@ class FullSolutionPipeline:
             system_config      : dict         系统规划参数
             capex              : SystemCapex  实际使用的投资参数
         """
-        if self.verbose:
-            print(f"\n{'='*65}")
-            print(f"  微电网解决方案流水线：{self.project_name}")
-            print(f"{'='*65}")
+        self._log(f"\n{'=' * 65}")
+        self._log(f"  微电网解决方案流水线：{self.project_name}")
+        self._log(f"{'=' * 65}")
 
         # ── Step 1: 系统容量规划 ──────────────────────────────
         sizing = SystemSizer.auto_size(
-            annual_load_kwh    = self.annual_load_kwh,
-            diesel_capacity_kw = self.diesel_capacity_kw,
-            latitude           = self.latitude,
-            cloudy_day_autonomy= self.cloudy_day_autonomy,
+            annual_load_kwh=self.annual_load_kwh,
+            diesel_capacity_kw=self.diesel_capacity_kw,
+            latitude=self.latitude,
+            cloudy_day_autonomy=self.cloudy_day_autonomy,
         )
 
-        pv_kw  = self.pv_capacity_kw  if self.pv_capacity_kw  > 0 else sizing["pv_kw"]
-        bat_kwh = self.battery_capacity_kwh if self.battery_capacity_kwh > 0 else sizing["battery_kwh"]
-        bat_kw  = sizing["battery_kw"]
+        pv_kw = (
+            self.pv_capacity_kw if self.pv_capacity_kw > 0 else sizing["pv_kw"]
+        )
+        bat_kwh = (
+            self.battery_capacity_kwh
+            if self.battery_capacity_kwh > 0
+            else sizing["battery_kwh"]
+        )
+        bat_kw = sizing["battery_kw"]
 
-        if self.verbose:
-            src = "(用户指定)" if self.pv_capacity_kw > 0 else "(自动规划)"
-            print(f"\n  [Step 1] 系统容量规划 {src}")
-            print(f"    光伏装机    : {pv_kw:>8.1f} kW")
-            print(f"    电池容量    : {bat_kwh:>8.1f} kWh  "
-                  f"({self.cloudy_day_autonomy}天自主 × "
-                  f"{sizing['daily_load_kwh']:.1f} kWh/天)")
-            print(f"    柴油发电机  : {self.diesel_capacity_kw:>8.1f} kW "
-                  f"(最小出力: {self.diesel_spec.min_load_kw:.1f} kW)")
-            print(f"    峰值日照时数: {sizing['peak_sun_hours']:>8.2f} h/天 "
-                  f"(纬度 {self.latitude}°N)")
+        src = "(用户指定)" if self.pv_capacity_kw > 0 else "(自动规划)"
+        self._log(f"\n  [Step 1] 系统容量规划 {src}")
+        self._log(f"    光伏装机    : {pv_kw:>8.1f} kW")
+        self._log(
+            f"    电池容量    : {bat_kwh:>8.1f} kWh  "
+            f"({self.cloudy_day_autonomy}天自主 × "
+            f"{sizing['daily_load_kwh']:.1f} kWh/天)"
+        )
+        self._log(
+            f"    柴油发电机  : {self.diesel_capacity_kw:>8.1f} kW "
+            f"(最小出力: {self.diesel_spec.min_load_kw:.1f} kW)"
+        )
+        self._log(
+            f"    峰值日照时数: {sizing['peak_sun_hours']:>8.2f} h/天 "
+            f"(纬度 {self.latitude}°N)"
+        )
 
         # ── Step 2: 生成时序数据 ──────────────────────────────
-        if self.verbose:
-            print(f"\n  [Step 2] 生成 8760h 时序数据...")
+        self._log("\n  [Step 2] 生成 8760h 时序数据...")
 
-        pv_profile   = generate_pv_profile(
+        pv_profile = generate_pv_profile(
             latitude=self.latitude, year=self.year, panel_capacity_kw=pv_kw
         )
         load_profile = generate_load_profile(
@@ -709,89 +786,95 @@ class FullSolutionPipeline:
         )
 
         # ── Step 3: PyPSA 双场景仿真 ──────────────────────────
-        if self.verbose:
-            print(f"\n  [Step 3] PyPSA 双场景仿真（替代 HOMER Pro）")
+        self._log("\n  [Step 3] PyPSA 双场景仿真（替代 HOMER Pro）")
 
         engine = MicrogridPyPSAEngine(
-            pv_capacity_kw       = pv_kw,
-            battery_capacity_kwh = bat_kwh,
-            battery_power_kw     = bat_kw,
-            diesel_spec          = self.diesel_spec,
-            load_profile         = load_profile,
-            pv_profile           = pv_profile,
-            verbose              = self.verbose,
+            pv_capacity_kw=pv_kw,
+            battery_capacity_kwh=bat_kwh,
+            battery_power_kw=bat_kw,
+            diesel_spec=self.diesel_spec,
+            load_profile=load_profile,
+            pv_profile=pv_profile,
+            verbose=self.verbose,
         )
 
         proj, mg_results, diesel_results = engine.get_project_parameters(
-            project_name           = self.project_name,
-            diesel_price_per_liter = self.diesel_price,
-            analysis_years         = self.analysis_years,
+            project_name=self.project_name,
+            diesel_price_per_liter=self.diesel_price,
+            analysis_years=self.analysis_years,
         )
 
         # 将 PyPSA 运行小时数写入 DieselOMParams
         diesel_om = self.diesel_om or DieselOMParams(
-            hours_b                  = float(mg_results["diesel_run_hours"]),
-            hours_a                  = float(diesel_results["diesel_run_hours"]),
-            diesel_generator_unit_cost = self.diesel_capacity_kw * 1125.0,
+            hours_b=float(mg_results["diesel_run_hours"]),
+            hours_a=float(diesel_results["diesel_run_hours"]),
+            diesel_generator_unit_cost=self.diesel_capacity_kw * 1125.0,
         )
 
         # ── Step 4: CAPEX 估算 ───────────────────────────────
-        if self.verbose:
-            print(f"\n  [Step 4] 系统投资成本估算")
+        self._log("\n  [Step 4] 系统投资成本估算")
 
         capex = self.capex_override or self.capex_estimator.estimate(
-            pv_kw       = pv_kw,
-            battery_kwh = bat_kwh,
-            diesel_kw   = self.diesel_capacity_kw,
+            pv_kw=pv_kw,
+            battery_kwh=bat_kwh,
+            diesel_kw=self.diesel_capacity_kw,
         )
 
-        if self.verbose:
-            print(f"    总成本（不含利润）: ${capex.equipment_subtotal:>10,.0f}")
-            print(f"    含利润售价        : ${capex.selling_price:>10,.0f}")
+        self._log(
+            f"    总成本（不含利润）: ${capex.equipment_subtotal:>10,.0f}"
+        )
+        self._log(f"    含利润售价        : ${capex.selling_price:>10,.0f}")
 
         # ── Step 5: 经济分析报告 ─────────────────────────────
-        if self.verbose:
-            print(f"\n  [Step 5] 生成经济分析报告...")
+        self._log("\n  [Step 5] 生成经济分析报告...")
 
         economic_result = generate_solution_report(
-            project   = proj,
-            capex     = capex,
-            mg_om     = self.mg_om,
-            diesel_om = diesel_om,
+            project=proj,
+            capex=capex,
+            mg_om=self.mg_om,
+            diesel_om=diesel_om,
         )
 
         # ── 汇总返回 ─────────────────────────────────────────
         system_config = {
-            "pv_capacity_kw":        pv_kw,
-            "battery_capacity_kwh":  bat_kwh,
-            "battery_power_kw":      bat_kw,
-            "diesel_capacity_kw":    self.diesel_capacity_kw,
-            "cloudy_day_autonomy":   self.cloudy_day_autonomy,
-            "latitude":              self.latitude,
-            "load_type":             self.load_type,
-            "diesel_spec":           self.diesel_spec,
-            "sizing_details":        sizing,
+            "pv_capacity_kw": pv_kw,
+            "battery_capacity_kwh": bat_kwh,
+            "battery_power_kw": bat_kw,
+            "diesel_capacity_kw": self.diesel_capacity_kw,
+            "cloudy_day_autonomy": self.cloudy_day_autonomy,
+            "latitude": self.latitude,
+            "load_type": self.load_type,
+            "diesel_spec": self.diesel_spec,
+            "sizing_details": sizing,
         }
 
         # 补充仿真性能指标到摘要
-        economic_result["simulation_mg"]     = mg_results
+        economic_result["simulation_mg"] = mg_results
         economic_result["simulation_diesel"] = diesel_results
-        economic_result["system_config"]     = system_config
-        economic_result["capex"]             = capex
+        economic_result["system_config"] = system_config
+        economic_result["capex"] = capex
 
         # 追加仿真性能摘要到 summary
-        economic_result["summary"].update({
-            "pv_capacity_kw":        pv_kw,
-            "battery_capacity_kwh":  bat_kwh,
-            "diesel_capacity_kw":    self.diesel_capacity_kw,
-            "solar_fraction_pct":    mg_results.get("solar_fraction", 0),
-            "loss_of_load_pct":      mg_results.get("loss_of_load_rate", 0),
-            "curtailment_pct":       mg_results.get("curtailment_rate", 0),
-            "mg_diesel_run_hours":   mg_results.get("diesel_run_hours", 0),
-            "diesel_only_run_hours": diesel_results.get("diesel_run_hours", 0),
-            "mg_avg_efficiency":     mg_results.get("avg_efficiency_kwh_per_L", 0),
-            "diesel_avg_efficiency": diesel_results.get("avg_efficiency_kwh_per_L", 0),
-        })
+        economic_result["summary"].update(
+            {
+                "pv_capacity_kw": pv_kw,
+                "battery_capacity_kwh": bat_kwh,
+                "diesel_capacity_kw": self.diesel_capacity_kw,
+                "solar_fraction_pct": mg_results.get("solar_fraction", 0),
+                "loss_of_load_pct": mg_results.get("loss_of_load_rate", 0),
+                "curtailment_pct": mg_results.get("curtailment_rate", 0),
+                "mg_diesel_run_hours": mg_results.get("diesel_run_hours", 0),
+                "diesel_only_run_hours": diesel_results.get(
+                    "diesel_run_hours", 0
+                ),
+                "mg_avg_efficiency": mg_results.get(
+                    "avg_efficiency_kwh_per_L", 0
+                ),
+                "diesel_avg_efficiency": diesel_results.get(
+                    "avg_efficiency_kwh_per_L", 0
+                ),
+            }
+        )
 
         return economic_result
 
@@ -800,61 +883,60 @@ class FullSolutionPipeline:
 # 6. 便捷入口函数
 # ─────────────────────────────────────────────────────────────
 
+
 def run_full_solution(
     annual_load_kwh: float,
     diesel_capacity_kw: float = 40.0,
     *,
-    pv_capacity_kw:       float = 0.0,
+    pv_capacity_kw: float = 0.0,
     battery_capacity_kwh: float = 0.0,
-    cloudy_day_autonomy:  int   = 2,
-    latitude:             float = 35.0,
-    load_type:            str   = "commercial",
+    cloudy_day_autonomy: int = 2,
+    latitude: float = 35.0,
+    load_type: str = "commercial",
     diesel_price_per_liter: float = 0.95,
-    analysis_years:       int   = 10,
-    project_name:         str   = "离网微电网项目",
-    capex:       Optional[SystemCapex]       = None,
-    mg_om:       Optional[MicrogridOMParams] = None,
-    diesel_spec: Optional[DieselSpec]        = None,
-    verbose:     bool = True,
+    analysis_years: int = 10,
+    project_name: str = "离网微电网项目",
+    capex: Optional[SystemCapex] = None,
+    mg_om: Optional[MicrogridOMParams] = None,
+    diesel_spec: Optional[DieselSpec] = None,
+    verbose: bool = True,
 ) -> dict:
-    """
-    一行调用：最少输入 → 完整微电网解决方案报告。
+    """一行调用：最少输入 → 完整微电网解决方案报告.
 
-    Parameters
-    ----------
-    annual_load_kwh       : 年用电量（kWh）—— 必填
-    diesel_capacity_kw    : 柴油发电机容量（kW）—— 必填
-    pv_capacity_kw        : 光伏容量（0=自动规划）
-    battery_capacity_kwh  : 电池容量（0=自动规划）
-    cloudy_day_autonomy   : 阴天自主供电天数（1/2/3）
-    latitude              : 项目纬度（°N）
-    load_type             : 'residential' / 'commercial' / 'industrial'
-    diesel_price_per_liter: 柴油单价（$/升）
-    analysis_years        : 经济分析年限
-    project_name          : 项目名称
-    capex                 : 可选，直接指定 SystemCapex（不自动估算）
-    mg_om                 : 可选，指定光储年运维参数
-    diesel_spec           : 可选，指定柴油机燃油系数
+    Args:
+        annual_load_kwh: 年用电量（kWh），必填。
+        diesel_capacity_kw: 柴油发电机容量（kW），必填。
+        pv_capacity_kw: 光伏容量（kW），0 表示自动规划。
+        battery_capacity_kwh: 电池容量（kWh），0 表示自动规划。
+        cloudy_day_autonomy: 阴天自主供电天数（1/2/3）。
+        latitude: 项目纬度（°N）。
+        load_type: 负载类型（residential/commercial/industrial）。
+        diesel_price_per_liter: 柴油单价（$/升）。
+        analysis_years: 经济分析年限。
+        project_name: 项目名称。
+        capex: 可选，直接指定 SystemCapex（不自动估算）。
+        mg_om: 可选，指定光储年运维参数。
+        diesel_spec: 可选，指定柴油机燃油系数。
+        verbose: 是否打印进度与 PyPSA 求解器输出。
 
-    Returns
-    -------
-    dict  同 FullSolutionPipeline.run() 返回值
+    Returns:
+        与 FullSolutionPipeline.run() 相同的结果字典。
     """
     pipeline = FullSolutionPipeline(
-        annual_load_kwh        = annual_load_kwh,
-        diesel_capacity_kw     = diesel_capacity_kw,
-        pv_capacity_kw         = pv_capacity_kw,
-        battery_capacity_kwh   = battery_capacity_kwh,
-        cloudy_day_autonomy    = cloudy_day_autonomy,
-        latitude               = latitude,
-        load_type              = load_type,
-        diesel_spec            = diesel_spec,
-        diesel_price_per_liter = diesel_price_per_liter,
-        analysis_years         = analysis_years,
-        project_name           = project_name,
-        capex                  = capex,
-        mg_om                  = mg_om,
-        verbose                = verbose,
+        annual_load_kwh=annual_load_kwh,
+        diesel_capacity_kw=diesel_capacity_kw,
+        pv_capacity_kw=pv_capacity_kw,
+        battery_capacity_kwh=battery_capacity_kwh,
+        cloudy_day_autonomy=cloudy_day_autonomy,
+        latitude=latitude,
+        load_type=load_type,
+        diesel_spec=diesel_spec,
+        diesel_price_per_liter=diesel_price_per_liter,
+        analysis_years=analysis_years,
+        project_name=project_name,
+        capex=capex,
+        mg_om=mg_om,
+        verbose=verbose,
     )
     return pipeline.run()
 
@@ -870,13 +952,13 @@ if __name__ == "__main__":
 
     # 最简调用：只填年用电量 + 柴发规格
     result = run_full_solution(
-        annual_load_kwh    = 131_400,   # 案例年用电量
-        diesel_capacity_kw = 40.0,      # 案例40kW柴油机
-        latitude           = 35.0,
-        load_type          = "commercial",
-        diesel_price_per_liter = 0.95,
-        analysis_years     = 25,
-        project_name       = "40kW验证案例（PyPSA替代HOMER）",
+        annual_load_kwh=131_400,  # 案例年用电量
+        diesel_capacity_kw=40.0,  # 案例40kW柴油机
+        latitude=35.0,
+        load_type="commercial",
+        diesel_price_per_liter=0.95,
+        analysis_years=25,
+        project_name="40kW验证案例（PyPSA替代HOMER）",
     )
 
     print(result["report"])
@@ -888,11 +970,24 @@ if __name__ == "__main__":
     print(f"  {'指标':<28} {'PyPSA':<15} {'HOMER Pro':<15}")
     print("  " + "-" * 58)
     print(f"  {'年用电量(kWh)':<28} {s['annual_load_kwh']:>12,.0f}   131,400")
-    print(f"  {'微电网年油耗(升)':<28} {s['mg_annual_fuel_usd']/0.95:>12,.0f}   5,599")
-    print(f"  {'纯柴油年油耗(升)':<28} {s['diesel_annual_fuel_usd']/0.95:>12,.0f}   45,764")
-    print(f"  {'太阳能占比(%)':<28} {s.get('solar_fraction_pct',0):>12.1f}   —")
-    print(f"  {'失负荷率(%)':<28} {s.get('loss_of_load_pct',0):>12.3f}   —")
-    print(f"  {'柴发年运行小时(微电网)':<28} {s.get('mg_diesel_run_hours',0):>12,}   889")
-    print(f"  {'LCOE交叉年':<28} {str(s.get('lcoe_crossover_year','—')):>12}   5")
-    print(f"  {'回本年':<28} {str(s.get('breakeven_year','—')):>12}   5")
+    print(
+        f"  {'微电网年油耗(升)':<28} "
+        f"{s['mg_annual_fuel_usd'] / 0.95:>12,.0f}   5,599"
+    )
+    print(
+        f"  {'纯柴油年油耗(升)':<28} "
+        f"{s['diesel_annual_fuel_usd'] / 0.95:>12,.0f}   45,764"
+    )
+    print(
+        f"  {'太阳能占比(%)':<28} {s.get('solar_fraction_pct', 0):>12.1f}   —"
+    )
+    print(f"  {'失负荷率(%)':<28} {s.get('loss_of_load_pct', 0):>12.3f}   —")
+    print(
+        f"  {'柴发年运行小时(微电网)':<28} "
+        f"{s.get('mg_diesel_run_hours', 0):>12,}   889"
+    )
+    print(
+        f"  {'LCOE交叉年':<28} {str(s.get('lcoe_crossover_year', '—')):>12}   5"
+    )
+    print(f"  {'回本年':<28} {str(s.get('breakeven_year', '—')):>12}   5")
     print("─" * 65)

@@ -9,10 +9,42 @@ interface Step8EMSProps {
   onUpdate: (data: Partial<ConfigData>) => void;
 }
 
+type Lang = 'zh' | 'en';
+interface AddonOption { key: EMSAddon; label: string; desc: string; detail: string }
+
+function AddonCard({ addon, selected, onToggle }: { addon: AddonOption; selected: boolean; onToggle: (addon: EMSAddon) => void }) {
+  return (
+    <div
+      onClick={() => onToggle(addon.key)}
+      style={{ padding: '1rem 1.25rem', border: `2px solid ${selected ? 'var(--theme-brand-700)' : '#e2e8f0'}`, borderRadius: '10px', background: selected ? 'var(--theme-tone-bg)' : 'white', cursor: 'pointer', transition: 'all 0.2s' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+        <div style={{ width: '20px', height: '20px', borderRadius: '4px', flexShrink: 0, marginTop: '2px', border: `2px solid ${selected ? 'var(--theme-brand-700)' : '#cbd5e0'}`, background: selected ? 'var(--theme-brand-700)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {selected && <svg width="12" height="10" viewBox="0 0 12 10" fill="none"><path d="M1 5L4.5 8.5L11 1.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, color: '#2d3748', fontSize: '0.95rem' }}>{addon.label}</div>
+          <div style={{ fontSize: '0.82rem', color: '#718096', marginTop: '0.15rem' }}>{addon.desc}</div>
+          <div style={{ fontSize: '0.8rem', color: '#4a5568', marginTop: '0.4rem', lineHeight: 1.6 }}>{addon.detail}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getSelectionSummary(addons: EMSAddon[], lang: Lang) {
+  const labels = [
+    lang === 'en' ? 'Edge Control (Standard)' : '边端控制（标准）',
+    ...(addons.includes('cloud') ? [lang === 'en' ? 'Cloud Platform' : '云平台管理'] : []),
+    ...(addons.includes('prediction') ? [lang === 'en' ? 'Predictive Control' : '智能预测控制'] : []),
+  ];
+  return labels.join(' + ');
+}
+
 export default function Step8EMS({ emsAddons = [], onUpdate }: Step8EMSProps) {
   const { t, lang } = useLang();
 
-  const ADDONS: { key: EMSAddon; label: string; desc: string; detail: string }[] = [
+  const addons: AddonOption[] = [
     {
       key: 'cloud',
       label: t('ems.cloud'),
@@ -38,7 +70,7 @@ export default function Step8EMS({ emsAddons = [], onUpdate }: Step8EMSProps) {
     onUpdate({ emsControlMethod: 'edge', emsAddons: next });
   };
 
-  const EDGE_FEATURES = lang === 'en'
+  const edgeFeatures = lang === 'en'
     ? ['Real-time power balance', 'Battery charge/discharge management', 'Diesel start/stop control', 'Overload / undervoltage protection', 'Local fault diagnosis', 'Off-grid island detection']
     : ['实时功率平衡控制', '电池充放电管理', '柴发启停控制', '过载 / 欠压保护', '本地故障诊断', '离网孤岛检测'];
 
@@ -81,7 +113,7 @@ export default function Step8EMS({ emsAddons = [], onUpdate }: Step8EMSProps) {
           borderTop: '1px solid var(--theme-tone-border)',
           display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.3rem',
         }}>
-          {EDGE_FEATURES.map(f => (
+          {edgeFeatures.map(f => (
             <div key={f} style={{ fontSize: '0.8rem', color: 'var(--theme-tone-text)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
               <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--theme-brand-700)', flexShrink: 0, display: 'inline-block' }} />
               {f}
@@ -98,42 +130,9 @@ export default function Step8EMS({ emsAddons = [], onUpdate }: Step8EMSProps) {
       </div>
 
       {/* ── 额外功能选项 ── */}
-      {ADDONS.map(addon => {
-        const selected = emsAddons.includes(addon.key);
-        return (
-          <div
-            key={addon.key}
-            onClick={() => toggleAddon(addon.key)}
-            style={{
-              padding: '1rem 1.25rem',
-              border: `2px solid ${selected ? 'var(--theme-brand-700)' : '#e2e8f0'}`,
-              borderRadius: '10px',
-              background: selected ? 'var(--theme-tone-bg)' : 'white',
-              cursor: 'pointer', transition: 'all 0.2s',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-              <div style={{
-                width: '20px', height: '20px', borderRadius: '4px', flexShrink: 0, marginTop: '2px',
-                border: `2px solid ${selected ? 'var(--theme-brand-700)' : '#cbd5e0'}`,
-                background: selected ? 'var(--theme-brand-700)' : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {selected && (
-                  <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
-                    <path d="M1 5L4.5 8.5L11 1.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, color: '#2d3748', fontSize: '0.95rem' }}>{addon.label}</div>
-                <div style={{ fontSize: '0.82rem', color: '#718096', marginTop: '0.15rem' }}>{addon.desc}</div>
-                <div style={{ fontSize: '0.8rem', color: '#4a5568', marginTop: '0.4rem', lineHeight: 1.6 }}>{addon.detail}</div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+      {addons.map(addon => (
+        <AddonCard key={addon.key} addon={addon} selected={emsAddons.includes(addon.key)} onToggle={toggleAddon} />
+      ))}
 
       {/* ── 当前选择汇总 ── */}
       <div style={{
@@ -144,9 +143,7 @@ export default function Step8EMS({ emsAddons = [], onUpdate }: Step8EMSProps) {
         <span style={{ fontWeight: 600 }}>
           {lang === 'en' ? 'Selected config: ' : '已选配置：'}
         </span>
-        {lang === 'en' ? 'Edge Control (Standard)' : '边端控制（标准）'}
-        {emsAddons.includes('cloud')      && (lang === 'en' ? ' + Cloud Platform' : ' + 云平台管理')}
-        {emsAddons.includes('prediction') && (lang === 'en' ? ' + Predictive Control' : ' + 智能预测控制')}
+        {getSelectionSummary(emsAddons, lang)}
       </div>
 
     </div>

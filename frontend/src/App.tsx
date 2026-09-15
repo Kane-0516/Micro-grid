@@ -38,46 +38,62 @@ interface StoredNavState {
 
 const NAV_PAGES: NavPage[] = ['standard-small', 'standard-medium', 'standard-large', 'custom-solution'];
 
-function readStoredNavState(): StoredNavState {
-  if (typeof window === 'undefined') return {};
-
-  let stored: StoredNavState = {};
+function readSessionNavState(): StoredNavState {
   try {
     const raw = window.sessionStorage.getItem(APP_NAV_STATE_KEY);
-    if (raw) stored = JSON.parse(raw) as StoredNavState;
+    return raw ? JSON.parse(raw) as StoredNavState : {};
   } catch {
-    stored = {};
+    return {};
   }
+}
 
-  const params = new URLSearchParams(window.location.search);
-  const pageParam = params.get('page') as NavPage | null;
-  const isWelcomeUrl = params.get('page') === 'welcome';
-  const stepParam = Number.parseInt(params.get('step') || '', 10);
-  const branchParam = params.get('branch') as CustomFlowBranch | null;
+function isNavPage(page: NavPage | null | undefined): page is NavPage {
+  return !!page && NAV_PAGES.includes(page);
+}
 
-  const navPage = pageParam && NAV_PAGES.includes(pageParam)
-    ? pageParam
-    : stored.navPage;
-  const urlHasAppState = !!pageParam || Number.isFinite(stepParam) || !!branchParam;
+function restoreConfig(stored: StoredNavState, navPage: NavPage | undefined, branch: CustomFlowBranch | null): ConfigData {
   const config = stored.config
     ? { ...stored.config }
     : createDefaultConfig(navPage === 'custom-solution' ? 'custom' : undefined);
-
-  if (branchParam === 'known-load' || branchParam === 'diy') {
-    config.scenario = branchParam;
-    config.customFlowBranch = branchParam;
+  if (branch === 'known-load' || branch === 'diy') {
+    config.scenario = branch;
+    config.customFlowBranch = branch;
   }
+  return config;
+}
 
-  const viewParam = params.get('view');
+function getRestoredStep(params: URLSearchParams, stored: StoredNavState): number {
+  const stepParam = Number.parseInt(params.get('step') || '', 10);
   const restoredStep = Number.isFinite(stepParam)
     ? Math.max(1, stepParam)
     : Math.max(1, stored.currentStep ?? 1);
+  const viewParam = params.get('view');
+  return viewParam === 'result' || viewParam === 'plans' ? 6 : restoredStep;
+}
+
+function shouldShowWelcome(params: URLSearchParams, stored: StoredNavState): boolean {
+  const pageParam = params.get('page');
+  if (pageParam === 'welcome') return true;
+  const hasAppState = !!pageParam
+    || Number.isFinite(Number.parseInt(params.get('step') || '', 10))
+    || !!params.get('branch');
+  return hasAppState ? false : (stored.showWelcome ?? true);
+}
+
+function readStoredNavState(): StoredNavState {
+  if (typeof window === 'undefined') return {};
+
+  const stored = readSessionNavState();
+  const params = new URLSearchParams(window.location.search);
+  const pageParam = params.get('page') as NavPage | null;
+  const navPage = isNavPage(pageParam) ? pageParam : stored.navPage;
+  const branch = params.get('branch') as CustomFlowBranch | null;
 
   return {
-    showWelcome: isWelcomeUrl ? true : (urlHasAppState ? false : (stored.showWelcome ?? true)),
-    navPage: navPage && NAV_PAGES.includes(navPage) ? navPage : 'standard-small',
-    currentStep: viewParam === 'result' || viewParam === 'plans' ? 6 : restoredStep,
-    config,
+    showWelcome: shouldShowWelcome(params, stored),
+    navPage: isNavPage(navPage) ? navPage : 'standard-small',
+    currentStep: getRestoredStep(params, stored),
+    config: restoreConfig(stored, navPage, branch),
   };
 }
 
@@ -91,6 +107,96 @@ function getAutoDensityMode(): DensityMode {
   if (width <= 1720 || height <= 980) return 'compact';
   if (width >= 2200 || (dpr >= 1.5 && width >= 1800)) return 'comfortable';
   return 'auto';
+}
+
+function appendCustomPageParams(
+  params: URLSearchParams,
+  currentStep: number,
+  config: ConfigData,
+  showPlanSelection: boolean,
+  inWizard: boolean,
+  totalWizardSteps: number,
+): void {
+  params.set('step', String(currentStep));
+  if (config.customFlowBranch) params.set('branch', config.customFlowBranch);
+  if (showPlanSelection) params.set('view', 'plans');
+  if (inWizard && currentStep === totalWizardSteps + 1) params.set('view', 'result');
+}
+
+function buildNavigationParams(
+  showWelcome: boolean,
+  navPage: NavPage,
+  currentStep: number,
+  config: ConfigData,
+  showPlanSelection: boolean,
+  inWizard: boolean,
+  totalWizardSteps: number,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  if (showWelcome) {
+    params.set('page', 'welcome');
+    return params;
+  }
+  params.set('page', navPage);
+  if (navPage === 'custom-solution') {
+    appendCustomPageParams(params, currentStep, config, showPlanSelection, inWizard, totalWizardSteps);
+  }
+  return params;
+}
+
+function ProductCatalogStatus({ isLoading, error, lang, onRetry }: Readonly<{
+  isLoading: boolean;
+  error: string | null;
+  lang: ReturnType<typeof useLang>['lang'];
+  onRetry: () => void;
+}>) {
+  if (isLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f6f8fc', padding: '2rem' }}>
+        <div style={{ width: 'min(560px, 100%)', background: '#fff', border: '1px solid #d9e2f2', borderRadius: '20px', padding: '2rem 2.25rem', boxShadow: '0 12px 28px rgba(18, 42, 86, 0.08)' }}>
+          <h1 style={{ marginBottom: '0.75rem', color: '#183b79', fontSize: '1.75rem' }}>
+            {lang === 'en' ? 'Loading product catalog' : '正在加载产品库'}
+          </h1>
+          <p style={{ color: '#52607a', fontSize: '1rem' }}>
+            {lang === 'en'
+              ? 'We are fetching the latest product definitions before rendering the application.'
+              : '正在获取最新产品定义，加载完成后再进入应用。'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f6f8fc', padding: '2rem' }}>
+      <div style={{ width: 'min(620px, 100%)', background: '#fff', border: '1px solid #f1c6c6', borderRadius: '20px', padding: '2rem 2.25rem', boxShadow: '0 12px 28px rgba(18, 42, 86, 0.08)' }}>
+        <h1 style={{ marginBottom: '0.75rem', color: '#8f1d1d', fontSize: '1.75rem' }}>
+          {lang === 'en' ? 'Unable to load product catalog' : '产品库加载失败'}
+        </h1>
+        <p style={{ color: '#5f6b7a', fontSize: '1rem', marginBottom: '0.75rem' }}>
+          {lang === 'en'
+            ? 'The application now depends on the backend product catalog and will not continue with stale frontend defaults.'
+            : '当前应用完全依赖后端产品库，不会再使用前端静态默认值继续运行。'}
+        </p>
+        <p style={{ color: '#8f1d1d', fontSize: '0.95rem', marginBottom: '1.5rem' }}>{error}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          style={{
+            border: 'none',
+            borderRadius: '999px',
+            background: '#1d4ed8',
+            color: '#fff',
+            fontWeight: 700,
+            padding: '0.85rem 1.4rem',
+            cursor: 'pointer',
+          }}
+        >
+          {lang === 'en' ? 'Retry loading catalog' : '重新加载产品库'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function App() {
@@ -303,19 +409,15 @@ function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const params = new URLSearchParams();
-    if (showWelcome) {
-      params.set('page', 'welcome');
-    } else {
-      params.set('page', navPage);
-      if (navPage === 'custom-solution') {
-        params.set('step', String(currentStep));
-        if (config.customFlowBranch) params.set('branch', config.customFlowBranch);
-        if (showPlanSelection) params.set('view', 'plans');
-        if (inWizard && currentStep === totalWizardSteps + 1) params.set('view', 'result');
-      }
-    }
-
+    const params = buildNavigationParams(
+      showWelcome,
+      navPage,
+      currentStep,
+      config,
+      showPlanSelection,
+      inWizard,
+      totalWizardSteps,
+    );
     const nextUrl = `${window.location.pathname}?${params.toString()}${window.location.hash}`;
     const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     if (nextUrl !== currentUrl) {
@@ -343,55 +445,15 @@ function App() {
       ? t('app.generate_plans')
       : t('btn.next');
 
-  if (isProductsLoading) {
+  const renderApp = () => {
+  if (isProductsLoading || productsLoadError) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f6f8fc', padding: '2rem' }}>
-        <div style={{ width: 'min(560px, 100%)', background: '#fff', border: '1px solid #d9e2f2', borderRadius: '20px', padding: '2rem 2.25rem', boxShadow: '0 12px 28px rgba(18, 42, 86, 0.08)' }}>
-          <h1 style={{ marginBottom: '0.75rem', color: '#183b79', fontSize: '1.75rem' }}>
-            {lang === 'en' ? 'Loading product catalog' : '正在加载产品库'}
-          </h1>
-          <p style={{ color: '#52607a', fontSize: '1rem' }}>
-            {lang === 'en'
-              ? 'We are fetching the latest product definitions before rendering the application.'
-              : '正在获取最新产品定义，加载完成后再进入应用。'}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (productsLoadError) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f6f8fc', padding: '2rem' }}>
-        <div style={{ width: 'min(620px, 100%)', background: '#fff', border: '1px solid #f1c6c6', borderRadius: '20px', padding: '2rem 2.25rem', boxShadow: '0 12px 28px rgba(18, 42, 86, 0.08)' }}>
-          <h1 style={{ marginBottom: '0.75rem', color: '#8f1d1d', fontSize: '1.75rem' }}>
-            {lang === 'en' ? 'Unable to load product catalog' : '产品库加载失败'}
-          </h1>
-          <p style={{ color: '#5f6b7a', fontSize: '1rem', marginBottom: '0.75rem' }}>
-            {lang === 'en'
-              ? 'The application now depends on the backend product catalog and will not continue with stale frontend defaults.'
-              : '当前应用完全依赖后端产品库，不会再使用前端静态默认值继续运行。'}
-          </p>
-          <p style={{ color: '#8f1d1d', fontSize: '0.95rem', marginBottom: '1.5rem' }}>
-            {productsLoadError}
-          </p>
-          <button
-            type="button"
-            onClick={retryProductsLoad}
-            style={{
-              border: 'none',
-              borderRadius: '999px',
-              background: '#1d4ed8',
-              color: '#fff',
-              fontWeight: 700,
-              padding: '0.85rem 1.4rem',
-              cursor: 'pointer',
-            }}
-          >
-            {lang === 'en' ? 'Retry loading catalog' : '重新加载产品库'}
-          </button>
-        </div>
-      </div>
+      <ProductCatalogStatus
+        isLoading={isProductsLoading}
+        error={productsLoadError}
+        lang={lang}
+        onRetry={retryProductsLoad}
+      />
     );
   }
 
@@ -487,6 +549,9 @@ function App() {
       />
     </AppScaffold>
   );
+  };
+
+  return renderApp();
 }
 
 export default App;

@@ -98,6 +98,12 @@ interface LinePaths {
   diesel: string;
 }
 
+interface DeviceItem {
+  label: string;
+  value: string | number;
+  unit?: string;
+}
+
 function DeviceBlock({
   id,
   title,
@@ -110,7 +116,7 @@ function DeviceBlock({
   id: string;
   title: string;
   color: string;
-  items: { label: string; value: string | number; unit?: string }[];
+  items: DeviceItem[];
   visible?: boolean;
   note?: string;
   variant?: 'wizard' | 'standard';
@@ -206,10 +212,10 @@ function computeLinePaths(
   return { pv: pvPath, load: loadPath, diesel: dieselPath };
 }
 
-export default function MicrogridTopology({ className = '', data, visibility, variant = 'wizard', layoutMode = 'schematic', pvFullFields = false }: MicrogridTopologyProps) {
-  const { lang } = useLang();
-  const { defaultPanelModel, defaultBatteryModel, defaultBracketModel, calcPvKw, getBracketByModel, homeBgDefaults } = useProducts();
-  const containerRef = useRef<HTMLDivElement>(null);
+function useTopologyPaths(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  visibility?: Partial<TopologyVisibility>,
+) {
   const [paths, setPaths] = useState<LinePaths>({ pv: '', load: '', diesel: '' });
 
   useLayoutEffect(() => {
@@ -218,24 +224,23 @@ export default function MicrogridTopology({ className = '', data, visibility, va
     const update = () => {
       const container = el.getBoundingClientRect();
       if (container.width === 0 || container.height === 0) return;
-      const pvWrap = el.querySelector('.topology-device--pv .topology-device__img-wrap') as HTMLElement | null;
-      const loadWrap = el.querySelector('.topology-device--load .topology-device__img-wrap') as HTMLElement | null;
-      const essWrap = el.querySelector('.topology-device--ess .topology-device__img-wrap') as HTMLElement | null;
-      const dieselWrap = el.querySelector('.topology-device--diesel .topology-device__img-wrap') as HTMLElement | null;
-      const pv = pvWrap?.getBoundingClientRect() ?? null;
-      const load = loadWrap?.getBoundingClientRect() ?? null;
-      const ess = essWrap?.getBoundingClientRect() ?? null;
-      const diesel = dieselWrap?.getBoundingClientRect() ?? null;
-      setPaths(computeLinePaths(container, pv, load, ess, diesel));
+      const getRect = (selector: string) => (
+        (el.querySelector(selector) as HTMLElement | null)?.getBoundingClientRect() ?? null
+      );
+      setPaths(computeLinePaths(
+        container,
+        getRect('.topology-device--pv .topology-device__img-wrap'),
+        getRect('.topology-device--load .topology-device__img-wrap'),
+        getRect('.topology-device--ess .topology-device__img-wrap'),
+        getRect('.topology-device--diesel .topology-device__img-wrap'),
+      ));
     };
     update();
-    // 首次打开时图片可能未加载，布局未就绪，需延迟重测以适配图片加载完成后的正确尺寸
-    const t1 = requestAnimationFrame(() => update());
+    const t1 = requestAnimationFrame(update);
     const t2 = window.setTimeout(update, 100);
     const t3 = window.setTimeout(update, 400);
     const ro = new ResizeObserver(update);
     ro.observe(el);
-    // 监听容器内所有图片加载完成
     const imgs = el.querySelectorAll('.topology-device__img');
     const onImgLoad = () => update();
     imgs.forEach((img) => {
@@ -249,7 +254,134 @@ export default function MicrogridTopology({ className = '', data, visibility, va
       ro.disconnect();
       imgs.forEach((img) => img.removeEventListener('load', onImgLoad));
     };
-  }, [visibility?.pv, visibility?.load, visibility?.ess, visibility?.diesel]);
+  }, [containerRef, visibility?.pv, visibility?.load, visibility?.ess, visibility?.diesel]);
+
+  return paths;
+}
+
+function metricToItem(metric: TopologyMetric): DeviceItem {
+  return { label: metric.name, value: metric.value, unit: metric.unit };
+}
+
+const PV_LABELS = {
+  zh: {
+    capacity: '最大光伏容量',
+    sets: '最大支架套数',
+    panel: '组件型号',
+    area: '最大占地面积',
+  },
+  en: {
+    capacity: 'Max PV Capacity',
+    sets: 'Max Bracket Sets',
+    panel: 'Panel Model',
+    area: 'Max Area',
+  },
+};
+
+function getPvItems(pv: TopologyData['pv'], lang: 'zh' | 'en', fullFields: boolean): DeviceItem[] {
+  if (pv.customItems?.length) return pv.customItems.map(metricToItem);
+  const labels = PV_LABELS[lang];
+  const capacity = { label: labels.capacity, value: pv.capacity.value, unit: pv.capacity.unit };
+  if (fullFields) {
+    return [
+      capacity,
+      { label: labels.sets, value: pv.sets?.value ?? '—', unit: pv.sets?.unit ?? '' },
+      { label: labels.panel, value: pv.panelModel ?? '—', unit: '' },
+      { label: labels.area, value: formatAreaDual(pv.areaM2, lang).combined, unit: '' },
+    ];
+  }
+  const items: DeviceItem[] = [capacity];
+  if (pv.sets) items.push({ label: labels.sets, value: pv.sets.value, unit: pv.sets.unit });
+  if (pv.panelModel) items.push({ label: labels.panel, value: pv.panelModel });
+  if (pv.areaM2) items.push({ label: labels.area, value: formatAreaDual(pv.areaM2, lang).combined });
+  return items;
+}
+
+const LOAD_TYPE_LABELS: Record<string, { zh: string; en: string }> = {
+  residential: { zh: '住宅', en: 'Residential' },
+  commercial: { zh: '商业', en: 'Commercial' },
+  industrial: { zh: '工业', en: 'Industrial' },
+};
+
+function getLoadItems(load: TopologyData['load'], lang: 'zh' | 'en'): DeviceItem[] {
+  if (load.customItems?.length) return load.customItems.map(metricToItem);
+  const items: DeviceItem[] = [
+    { label: lang === 'en' ? 'Annual Load' : '年用电量', value: load.annualKwh.value, unit: load.annualKwh.unit },
+  ];
+  if (load.loadType) {
+    items.push({
+      label: lang === 'en' ? 'Load Type' : '负载类型',
+      value: LOAD_TYPE_LABELS[load.loadType]?.[lang] ?? load.loadType,
+    });
+  }
+  if (load.peakKw != null) items.push({ label: lang === 'en' ? 'Peak Load' : '峰值负荷', value: load.peakKw, unit: 'kW' });
+  return items;
+}
+
+function getEssItems(ess: TopologyData['ess'], lang: 'zh' | 'en'): DeviceItem[] {
+  if (ess.customItems?.length) return ess.customItems.map(metricToItem);
+  return [
+    { label: lang === 'en' ? 'Battery Capacity' : '储能容量', value: ess.capacity.value, unit: ess.capacity.unit },
+    { label: lang === 'en' ? 'Storage Days' : '储能天数', value: ess.storageDays?.value ?? '—', unit: ess.storageDays?.unit ?? '' },
+    { label: lang === 'en' ? 'Pack Model' : '电池包型号', value: ess.packModel ?? '—' },
+  ];
+}
+
+function getDieselItems(diesel: TopologyData['diesel'], lang: 'zh' | 'en'): DeviceItem[] {
+  if (diesel.customItems?.length) return diesel.customItems.map(metricToItem);
+  const items: DeviceItem[] = [
+    { label: lang === 'en' ? 'Generator Capacity' : '发电机容量', value: diesel.capacity.value, unit: diesel.capacity.unit },
+  ];
+  if (diesel.isNew != null) {
+    const status = diesel.isNew
+      ? (lang === 'en' ? 'New' : '新购')
+      : (lang === 'en' ? 'Existing' : '已有');
+    items.push({ label: lang === 'en' ? 'Status' : '状态', value: status });
+  }
+  return items;
+}
+
+function TopologyLines({ paths, visibility }: { paths: LinePaths; visibility: TopologyVisibility }) {
+  const lines = [
+    { id: 'pv', path: paths.pv, visible: visibility.pv },
+    { id: 'load', path: paths.load, visible: visibility.load },
+    { id: 'diesel', path: paths.diesel, visible: visibility.diesel },
+  ];
+  return (
+    <svg className="topology-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="line-pv" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#f59e0b" />
+          <stop offset="100%" stopColor="#10b981" />
+        </linearGradient>
+        <linearGradient id="line-load" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#06b6d4" />
+        </linearGradient>
+        <linearGradient id="line-diesel" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#8b5cf6" />
+          <stop offset="100%" stopColor="#ec4899" />
+        </linearGradient>
+      </defs>
+      {lines.filter(line => line.visible && line.path).map(line => (
+        <path
+          key={line.id}
+          className={`topology-line topology-line--${line.id}`}
+          d={line.path}
+          fill="none"
+          stroke={`url(#line-${line.id})`}
+          strokeWidth="0.5"
+        />
+      ))}
+    </svg>
+  );
+}
+
+export default function MicrogridTopology({ className = '', data, visibility, variant = 'wizard', layoutMode = 'schematic', pvFullFields = false }: MicrogridTopologyProps) {
+  const { lang } = useLang();
+  const { defaultPanelModel, defaultBatteryModel, defaultBracketModel, calcPvKw, getBracketByModel, homeBgDefaults } = useProducts();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const paths = useTopologyPaths(containerRef, visibility);
 
   const vis = { ...DEFAULT_VISIBILITY, ...visibility };
   const defaultBracket = getBracketByModel(defaultBracketModel);
@@ -288,88 +420,16 @@ export default function MicrogridTopology({ className = '', data, visibility, va
     diesel: { ...DEFAULT_DATA.diesel, ...data?.diesel },
   };
 
-  const metricToItem = (m: TopologyMetric) => ({
-    label: m.name,
-    value: m.value,
-    unit: m.unit,
-  });
-
-  const pvItems = d.pv.customItems && d.pv.customItems.length > 0
-    ? d.pv.customItems.map(metricToItem)
-    : pvFullFields
-    ? [
-        { label: lang === 'en' ? 'Max PV Capacity' : '最大光伏容量', value: d.pv.capacity.value, unit: d.pv.capacity.unit },
-        { label: lang === 'en' ? 'Max Bracket Sets' : '最大支架套数', value: d.pv.sets?.value ?? '—', unit: d.pv.sets?.unit ?? '' },
-        { label: lang === 'en' ? 'Panel Model' : '组件型号', value: d.pv.panelModel ?? '—', unit: '' },
-        { label: lang === 'en' ? 'Max Area' : '最大占地面积', value: formatAreaDual(d.pv.areaM2, lang).combined, unit: '' },
-      ]
-    : [
-        { label: lang === 'en' ? 'Max PV Capacity' : '最大光伏容量', value: d.pv.capacity.value, unit: d.pv.capacity.unit },
-        ...(d.pv.sets ? [{ label: lang === 'en' ? 'Max Bracket Sets' : '最大支架套数', value: d.pv.sets.value, unit: d.pv.sets.unit }] : []),
-        ...(d.pv.panelModel ? [{ label: lang === 'en' ? 'Panel Model' : '组件型号', value: d.pv.panelModel, unit: '' }] : []),
-        ...(d.pv.areaM2 ? [{ label: lang === 'en' ? 'Max Area' : '最大占地面积', value: formatAreaDual(d.pv.areaM2, lang).combined, unit: '' }] : []),
-      ];
-
-  const loadTypeMap: Record<string, { zh: string; en: string }> = {
-    residential: { zh: '住宅', en: 'Residential' },
-    commercial:  { zh: '商业', en: 'Commercial' },
-    industrial:  { zh: '工业', en: 'Industrial' },
-  };
-  const loadTypeLabel = d.load.loadType
-    ? (loadTypeMap[d.load.loadType as string]?.[lang as 'zh' | 'en'] ?? d.load.loadType)
-    : null;
-  const loadItems = d.load.customItems && d.load.customItems.length > 0
-    ? d.load.customItems.map(metricToItem)
-    : [
-        { label: lang === 'en' ? 'Annual Load' : '年用电量', value: d.load.annualKwh.value, unit: d.load.annualKwh.unit },
-        ...(loadTypeLabel ? [{ label: lang === 'en' ? 'Load Type' : '负载类型', value: loadTypeLabel, unit: '' }] : []),
-        ...(d.load.peakKw != null ? [{ label: lang === 'en' ? 'Peak Load' : '峰值负荷', value: d.load.peakKw, unit: 'kW' }] : []),
-      ];
-
-  const essItems = d.ess.customItems && d.ess.customItems.length > 0
-    ? d.ess.customItems.map(metricToItem)
-    : [
-        { label: lang === 'en' ? 'Battery Capacity' : '储能容量', value: d.ess.capacity.value, unit: d.ess.capacity.unit },
-        { label: lang === 'en' ? 'Storage Days' : '储能天数', value: d.ess.storageDays?.value ?? '—', unit: d.ess.storageDays?.unit ?? '' },
-        { label: lang === 'en' ? 'Pack Model' : '电池包型号', value: d.ess.packModel ?? '—', unit: '' },
-      ];
-
-  const dieselItems = d.diesel.customItems && d.diesel.customItems.length > 0
-    ? d.diesel.customItems.map(metricToItem)
-    : [
-        { label: lang === 'en' ? 'Generator Capacity' : '发电机容量', value: d.diesel.capacity.value, unit: d.diesel.capacity.unit },
-        ...(d.diesel.isNew != null ? [{ label: lang === 'en' ? 'Status' : '状态', value: d.diesel.isNew ? (lang === 'en' ? 'New' : '新购') : (lang === 'en' ? 'Existing' : '已有'), unit: '' }] : []),
-      ];
+  const pvItems = getPvItems(d.pv, lang, pvFullFields);
+  const loadItems = getLoadItems(d.load, lang);
+  const essItems = getEssItems(d.ess, lang);
+  const dieselItems = getDieselItems(d.diesel, lang);
 
   const layoutClass = `microgrid-topology--layout-${layoutMode}`;
   return (
     <div ref={containerRef} className={`microgrid-topology ${layoutClass} ${className}`.trim()}>
       {/* 动态折线连接：PV右侧→ESS上侧，Load右侧→ESS下侧，Diesel上侧→ESS右侧，随分辨率变化自动适配 */}
-      <svg className="topology-lines" viewBox="0 0 100 100" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id="line-pv" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#f59e0b" />
-            <stop offset="100%" stopColor="#10b981" />
-          </linearGradient>
-          <linearGradient id="line-load" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="100%" stopColor="#06b6d4" />
-          </linearGradient>
-          <linearGradient id="line-diesel" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#8b5cf6" />
-            <stop offset="100%" stopColor="#ec4899" />
-          </linearGradient>
-        </defs>
-        {vis.pv && paths.pv && (
-          <path className="topology-line topology-line--pv" d={paths.pv} fill="none" stroke="url(#line-pv)" strokeWidth="0.5" />
-        )}
-        {vis.load && paths.load && (
-          <path className="topology-line topology-line--load" d={paths.load} fill="none" stroke="url(#line-load)" strokeWidth="0.5" />
-        )}
-        {vis.diesel && paths.diesel && (
-          <path className="topology-line topology-line--diesel" d={paths.diesel} fill="none" stroke="url(#line-diesel)" strokeWidth="0.5" />
-        )}
-      </svg>
+      <TopologyLines paths={paths} visibility={vis} />
 
       <DeviceBlock id="pv" title={d.pv.title} color={COLORS.pv} items={pvItems} visible={vis.pv} variant={variant} />
       <DeviceBlock id="load" title={d.load.title} color={COLORS.load} items={loadItems} visible={vis.load} variant={variant} />

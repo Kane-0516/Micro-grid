@@ -41,7 +41,7 @@ export default function SideNav({
   return (
     <nav className="sidenav">
       <div className="sidenav-brand">
-        <div className="sidenav-brand-name">MicroGrid</div>
+        <div className="sidenav-brand-name">VoltageEnergy</div>
         <div className="sidenav-brand-sub">
           {lang === 'en' ? 'Microgrid Advisor' : '微电网方案顾问'}
         </div>

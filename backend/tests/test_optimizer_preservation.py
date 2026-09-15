@@ -1,7 +1,4 @@
-"""
-test_optimizer_preservation.py
-================================
-保持性属性测试：验证 optimizer.py 的 API 结构、模拟管道和约束执行不变。
+"""保持性属性测试：验证 optimizer.py 的 API 结构、模拟管道和约束执行不变.
 
 这些测试在 **修复前** 编写并运行，确认当前行为的基线属性。
 修复后重新运行，确认这些属性仍然成立（无回归）。
@@ -29,19 +26,18 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from app.services.optimizer import (
+from app.services.optimizer import (  # noqa: E402
+    _STANDARD_DIESEL_KW,
     OptimizeInput,
     OptimizeOption,
-    _STANDARD_DIESEL_KW,
     optimize_with_diagnostics,
 )
-
 
 # ── 测试输入工厂 ──────────────────────────────────────────────────
 
 
 def _make_input_146k() -> OptimizeInput:
-    """146k kWh/yr 标准测试输入 (中等负载)"""
+    """146k kWh/yr 标准测试输入 (中等负载)."""
     return OptimizeInput(
         annual_load_kwh=146_000,
         peak_load_kw=0.0,
@@ -73,7 +69,7 @@ def _make_input_146k() -> OptimizeInput:
 
 
 def _make_input_73k() -> OptimizeInput:
-    """73k kWh/yr 小负载测试输入"""
+    """73k kWh/yr 小负载测试输入."""
     return OptimizeInput(
         annual_load_kwh=73_000,
         peak_load_kw=0.0,
@@ -105,7 +101,7 @@ def _make_input_73k() -> OptimizeInput:
 
 
 def _make_input_300k() -> OptimizeInput:
-    """300k kWh/yr 大负载测试输入"""
+    """300k kWh/yr 大负载测试输入."""
     return OptimizeInput(
         annual_load_kwh=300_000,
         peak_load_kw=0.0,
@@ -137,7 +133,7 @@ def _make_input_300k() -> OptimizeInput:
 
 
 def _make_input_no_diesel() -> OptimizeInput:
-    """allow_diesel=False 的测试输入"""
+    """allow_diesel=False 的测试输入."""
     return OptimizeInput(
         annual_load_kwh=146_000,
         peak_load_kw=0.0,
@@ -169,7 +165,7 @@ def _make_input_no_diesel() -> OptimizeInput:
 
 
 def _make_input_small_area() -> OptimizeInput:
-    """available_area_m2=200 小面积约束测试输入"""
+    """available_area_m2=200 小面积约束测试输入."""
     return OptimizeInput(
         annual_load_kwh=146_000,
         peak_load_kw=0.0,
@@ -204,15 +200,19 @@ def _make_input_small_area() -> OptimizeInput:
 
 
 class TestReturnTypeStructure:
-    """验证 optimize_with_diagnostics() 返回正确的元组结构"""
+    """验证 optimize_with_diagnostics() 返回正确的元组结构."""
 
-    @pytest.mark.parametrize("make_input", [
-        _make_input_146k,
-        _make_input_73k,
-        _make_input_300k,
-    ], ids=["146k_kwh", "73k_kwh", "300k_kwh"])
+    @pytest.mark.parametrize(
+        "make_input",
+        [
+            _make_input_146k,
+            _make_input_73k,
+            _make_input_300k,
+        ],
+        ids=["146k_kwh", "73k_kwh", "300k_kwh"],
+    )
     def test_returns_tuple_of_list_and_dict(self, make_input):
-        """返回值应为 (List[OptimizeOption], dict) 元组"""
+        """返回值应为 (List[OptimizeOption], dict) 元组."""
         req = make_input()
         result = optimize_with_diagnostics(req)
 
@@ -234,15 +234,19 @@ class TestReturnTypeStructure:
 
 
 class TestFieldTypesAndValues:
-    """验证每个 OptimizeOption 的所有必需字段具有正确类型和合理值"""
+    """验证每个 OptimizeOption 的所有必需字段具有正确类型和合理值."""
 
-    @pytest.mark.parametrize("make_input", [
-        _make_input_146k,
-        _make_input_73k,
-        _make_input_300k,
-    ], ids=["146k_kwh", "73k_kwh", "300k_kwh"])
+    @pytest.mark.parametrize(
+        "make_input",
+        [
+            _make_input_146k,
+            _make_input_73k,
+            _make_input_300k,
+        ],
+        ids=["146k_kwh", "73k_kwh", "300k_kwh"],
+    )
     def test_all_fields_populated_with_correct_types(self, make_input):
-        """所有 OptimizeOption 字段应被正确填充"""
+        """所有 OptimizeOption 字段应被正确填充."""
         req = make_input()
         results, _ = optimize_with_diagnostics(req)
 
@@ -254,7 +258,9 @@ class TestFieldTypesAndValues:
             # float 字段 (正数)
             assert isinstance(opt.pv_kw, float) and opt.pv_kw > 0
             assert isinstance(opt.battery_kwh, float) and opt.battery_kwh > 0
-            assert isinstance(opt.diesel_kw, (int, float)) and opt.diesel_kw >= 0
+            assert (
+                isinstance(opt.diesel_kw, (int, float)) and opt.diesel_kw >= 0
+            )
             assert isinstance(opt.solar_fraction_pct, (int, float))
             assert isinstance(opt.annual_diesel_kwh, (int, float))
             assert isinstance(opt.annual_diesel_liters, (int, float))
@@ -284,13 +290,20 @@ class TestFieldTypesAndValues:
             # float score
             assert isinstance(opt.score, (int, float))
 
-    @pytest.mark.parametrize("make_input", [
-        _make_input_146k,
-        _make_input_73k,
-        _make_input_300k,
-    ], ids=["146k_kwh", "73k_kwh", "300k_kwh"])
+    @pytest.mark.parametrize(
+        "make_input",
+        [
+            _make_input_146k,
+            _make_input_73k,
+            _make_input_300k,
+        ],
+        ids=["146k_kwh", "73k_kwh", "300k_kwh"],
+    )
     def test_economic_fields_positive(self, make_input):
-        """capex > 0, selling_price > capex, lcoe > 0, payback > 0, npv 是数字"""
+        """Capex > 0, selling_price > capex, lcoe > 0, payback > 0.
+
+        npv 是数字.
+        """
         req = make_input()
         results, _ = optimize_with_diagnostics(req)
 
@@ -314,8 +327,7 @@ class TestFieldTypesAndValues:
                 f"(bracket_sets={opt.bracket_sets})"
             )
             assert opt.npv_10yr_usd is not None, (
-                f"npv_10yr_usd 不应为 None "
-                f"(bracket_sets={opt.bracket_sets})"
+                f"npv_10yr_usd 不应为 None (bracket_sets={opt.bracket_sets})"
             )
             assert isinstance(opt.npv_10yr_usd, (int, float)), (
                 f"npv_10yr_usd 应为数字, 实际类型 = {type(opt.npv_10yr_usd)} "
@@ -327,10 +339,10 @@ class TestFieldTypesAndValues:
 
 
 class TestAllowDieselConstraint:
-    """验证 allow_diesel=False 时所有候选方案排除柴油"""
+    """验证 allow_diesel=False 时所有候选方案排除柴油."""
 
     def test_no_diesel_when_disallowed(self):
-        """allow_diesel=False 时所有候选 diesel_kw == 0"""
+        """allow_diesel=False 时所有候选 diesel_kw == 0."""
         req = _make_input_no_diesel()
         results, _ = optimize_with_diagnostics(req)
 
@@ -350,10 +362,10 @@ class TestAllowDieselConstraint:
 
 
 class TestAreaConstraint:
-    """验证 available_area_m2 较小时，候选不超过面积限制"""
+    """验证 available_area_m2 较小时，候选不超过面积限制."""
 
     def test_small_area_limits_candidates(self):
-        """available_area_m2=200 应限制最大 bracket_sets"""
+        """available_area_m2=200 应限制最大 bracket_sets."""
         req = _make_input_small_area()
         results, _ = optimize_with_diagnostics(req)
 
@@ -380,15 +392,19 @@ class TestAreaConstraint:
 
 
 class TestDieselCatalogConstraint:
-    """验证所有结果中的 diesel_kw 值来自标准目录或为 0"""
+    """验证所有结果中的 diesel_kw 值来自标准目录或为 0."""
 
-    @pytest.mark.parametrize("make_input", [
-        _make_input_146k,
-        _make_input_73k,
-        _make_input_300k,
-    ], ids=["146k_kwh", "73k_kwh", "300k_kwh"])
+    @pytest.mark.parametrize(
+        "make_input",
+        [
+            _make_input_146k,
+            _make_input_73k,
+            _make_input_300k,
+        ],
+        ids=["146k_kwh", "73k_kwh", "300k_kwh"],
+    )
     def test_diesel_sizes_from_catalog(self, make_input):
-        """所有 diesel_kw 应在 _STANDARD_DIESEL_KW 中或为 0"""
+        """所有 diesel_kw 应在 _STANDARD_DIESEL_KW 中或为 0."""
         req = make_input()
         results, _ = optimize_with_diagnostics(req)
 
@@ -405,21 +421,23 @@ class TestDieselCatalogConstraint:
 
 
 class TestPyPSAUsage:
-    """验证提供 lat/lon/year 时使用 PyPSA 模拟"""
+    """验证提供 lat/lon/year 时使用 PyPSA 模拟."""
 
-    @pytest.mark.parametrize("make_input", [
-        _make_input_146k,
-        _make_input_73k,
-        _make_input_300k,
-    ], ids=["146k_kwh", "73k_kwh", "300k_kwh"])
+    @pytest.mark.parametrize(
+        "make_input",
+        [
+            _make_input_146k,
+            _make_input_73k,
+            _make_input_300k,
+        ],
+        ids=["146k_kwh", "73k_kwh", "300k_kwh"],
+    )
     def test_pypsa_used_when_location_provided(self, make_input):
-        """提供 lat/lon/year 时 diagnostics['usePypsa'] 应为 True"""
+        """提供 lat/lon/year 时 diagnostics['usePypsa'] 应为 True."""
         req = make_input()
         _, diagnostics = optimize_with_diagnostics(req)
 
-        assert "usePypsa" in diagnostics, (
-            "diagnostics 应包含 'usePypsa' 键"
-        )
+        assert "usePypsa" in diagnostics, "diagnostics 应包含 'usePypsa' 键"
         assert diagnostics["usePypsa"] is True, (
             f"提供 lat={req.latitude}, lon={req.longitude}, year={req.year} "
             f"时 usePypsa 应为 True, 实际为 {diagnostics['usePypsa']}"

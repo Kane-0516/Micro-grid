@@ -42,6 +42,217 @@ function calcMaxPowerKw(voltageV: number, currentA: number, isThree: boolean): n
   return +(kva * POWER_FACTOR).toFixed(2);
 }
 
+type Lang = 'zh' | 'en';
+type DieselGenerator = ReturnType<typeof useProducts>['dieselGenerators'][number];
+
+function GeneratorNeedSelector({
+  value, capacityKw, lang, onUpdate,
+}: {
+  value?: boolean;
+  capacityKw?: number;
+  lang: Lang;
+  onUpdate: StepDIYGeneratorProps['onUpdate'];
+}) {
+  const options = [
+    { value: true, label: lang === 'en' ? 'Yes, include generator' : '是，需要配置' },
+    { value: false, label: lang === 'en' ? 'No, PV + storage only' : '否，不需要' },
+  ];
+  return (
+    <div>
+      <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem', fontSize: '0.95rem' }}>
+        {lang === 'en' ? 'Do you need a diesel generator?' : '是否需要配置柴油发电机？'}
+      </div>
+      <div style={{ display: 'flex', gap: '0.75rem' }}>
+        {options.map(option => {
+          const active = value === option.value;
+          return (
+            <div
+              key={String(option.value)}
+              onClick={() => onUpdate({ hasGenerator: option.value, dieselCapacityKw: option.value ? (capacityKw ?? 0) : 0 })}
+              style={{
+                flex: 1, padding: '1rem 1.25rem', textAlign: 'center',
+                border: `2px solid ${active ? '#1a365d' : '#e2e8f0'}`,
+                borderRadius: '12px', cursor: 'pointer',
+                background: active ? '#ebf4ff' : 'white',
+                transition: 'all 0.18s',
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: '1rem', color: '#2d3748' }}>{option.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function GeneratorPowerInput({
+  selectedVoltIdx, currentInput, computedPowerKw, requiredKw, lang, onVoltChange, onCurrentChange,
+}: {
+  selectedVoltIdx: number;
+  currentInput: string;
+  computedPowerKw: number;
+  requiredKw: number;
+  lang: Lang;
+  onVoltChange: (index: number) => void;
+  onCurrentChange: (value: string) => void;
+}) {
+  const voltOpt = VOLTAGE_OPTIONS[selectedVoltIdx];
+  const currentA = parseFloat(currentInput);
+  return (
+    <>
+      <div>
+        <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.93rem' }}>
+          {lang === 'en' ? 'Maximum Load Voltage' : '最大负载电压'}
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {VOLTAGE_OPTIONS.map((option, index) => {
+            const active = selectedVoltIdx === index;
+            return (
+              <button
+                key={option.v}
+                onClick={() => onVoltChange(index)}
+                style={{
+                  padding: '0.45rem 1rem', fontSize: '0.88rem',
+                  border: `2px solid ${active ? '#1a365d' : '#e2e8f0'}`,
+                  borderRadius: '10px', cursor: 'pointer',
+                  background: active ? '#1a365d' : 'white',
+                  color: active ? 'white' : '#4a5568',
+                  fontWeight: active ? 700 : 400,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {lang === 'en' ? option.labelEn : option.labelZh}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div>
+        <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.93rem' }}>
+          {lang === 'en' ? 'Maximum Load Current (A)' : '最大负载电流 (A)'}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <input
+            type="number"
+            value={currentInput}
+            onChange={event => onCurrentChange(event.target.value)}
+            placeholder={lang === 'en' ? 'e.g. 100' : '如：100'}
+            min={1}
+            step={1}
+            style={{ padding: '0.6rem 1rem', border: '1px solid #cbd5e0', borderRadius: '8px', fontSize: '1rem', width: '140px' }}
+          />
+          <span style={{ color: '#718096', fontSize: '0.9rem' }}>A</span>
+        </div>
+      </div>
+      {computedPowerKw > 0 && (
+        <div style={{ padding: '0.85rem 1.1rem', background: 'var(--theme-tone-bg)', border: '1px solid var(--theme-tone-border)', borderLeft: '4px solid var(--theme-tone-accent)', borderRadius: '8px', fontSize: '0.87rem', color: 'var(--theme-tone-text)' }}>
+          <strong>{lang === 'en' ? 'Max Load Power: ' : '最大负载功率：'}</strong>
+          {voltOpt.isThree
+            ? `√3 × ${voltOpt.v}V × ${currentA || '?'}A × PF(${POWER_FACTOR})`
+            : `${voltOpt.v}V × ${currentA || '?'}A × PF(${POWER_FACTOR})`}
+          {' = '}<strong>{computedPowerKw.toFixed(1)} kW</strong>&nbsp;
+          {lang === 'en'
+            ? `→ Required generator ≥ ${requiredKw.toFixed(1)} kW (×1.2 safety margin)`
+            : `→ 需要柴发 ≥ ${requiredKw.toFixed(1)} kW（×1.2 安全系数）`}
+        </div>
+      )}
+    </>
+  );
+}
+
+function GeneratorOptions({
+  generators, requiredKw, capacityKw, hasGenerator, lang, onSelect,
+}: {
+  generators: DieselGenerator[];
+  requiredKw: number;
+  capacityKw?: number;
+  hasGenerator?: boolean;
+  lang: Lang;
+  onSelect: (powerKw: number) => void;
+}) {
+  const fitting = generators.filter(generator => generator.powerKw >= requiredKw);
+  const displayed = fitting.length > 0 ? fitting : generators;
+  return (
+    <div>
+      <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem', fontSize: '0.93rem' }}>
+        {lang === 'en' ? 'Matching Diesel Generators' : '适配柴油发电机'}
+        {fitting.length === 0 && (
+          <span style={{ fontWeight: 400, color: 'var(--theme-tone-warm-text)', marginLeft: '0.5rem', fontSize: '0.85rem' }}>
+            ({lang === 'en' ? 'All shown as reference' : '无完全匹配，供参考'})
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+        {displayed.map(generator => {
+          const active = capacityKw === generator.powerKw && hasGenerator;
+          const fits = generator.powerKw >= requiredKw;
+          return (
+            <div
+              key={generator.model}
+              onClick={() => onSelect(generator.powerKw)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '1rem',
+                padding: '0.85rem 1.1rem',
+                border: `2px solid ${active ? '#1a365d' : fits ? 'var(--theme-tone-border)' : '#e2e8f0'}`,
+                borderRadius: '10px', cursor: 'pointer',
+                background: active ? '#ebf4ff' : fits ? 'var(--theme-tone-bg)' : 'white',
+                transition: 'all 0.18s',
+              }}
+            >
+              <div style={{ width: '18px', height: '18px', borderRadius: '50%', flexShrink: 0, border: `2px solid ${active ? '#1a365d' : '#cbd5e0'}`, background: active ? '#1a365d' : 'transparent' }} />
+              <div style={{ flex: 1 }}>
+                <span style={{ fontWeight: 700, color: '#2d3748', fontSize: '1rem' }}>{generator.powerKw} kW</span>
+                <span style={{ fontSize: '0.82rem', color: '#718096', marginLeft: '0.5rem' }}>{getLocalizedProductLabel(generator, lang)}</span>
+                {fits && (
+                  <span style={{ fontSize: '0.68rem', fontWeight: 700, marginLeft: '0.5rem', padding: '0.1rem 0.4rem', borderRadius: '8px', background: 'var(--theme-brand-100)', color: 'var(--theme-tone-text)' }}>
+                    {lang === 'en' ? '✓ Suitable' : '✓ 适配'}
+                  </span>
+                )}
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0, fontSize: '0.85rem', color: '#718096' }}>${generator.priceUsd.toLocaleString()}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function OwnershipSelector({ isNew, lang, onSelect }: { isNew: boolean; lang: Lang; onSelect: (isNew: boolean) => void }) {
+  const options = [
+    { isNew: true, label: lang === 'en' ? 'Purchase new (include in CAPEX)' : '需购置（计入成本）' },
+    { isNew: false, label: lang === 'en' ? 'Already owned (exclude CAPEX)' : '已有（不计成本）' },
+  ];
+  return (
+    <div>
+      <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.93rem' }}>
+        {lang === 'en' ? 'Generator Ownership' : '柴发来源'}
+      </div>
+      <div style={{ display: 'flex', gap: '0.75rem' }}>
+        {options.map(option => {
+          const active = isNew === option.isNew;
+          return (
+            <div
+              key={String(option.isNew)}
+              onClick={() => onSelect(option.isNew)}
+              style={{
+                flex: 1, padding: '0.75rem 1rem', textAlign: 'center',
+                border: `2px solid ${active ? '#1a365d' : '#e2e8f0'}`,
+                borderRadius: '10px', cursor: 'pointer',
+                background: active ? '#ebf4ff' : 'white',
+                fontSize: '0.88rem', transition: 'all 0.18s',
+              }}
+            >
+              <div style={{ fontWeight: active ? 700 : 400, color: '#2d3748' }}>{option.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function StepDIYGenerator({
   hasGenerator,
   dieselIsNew = true,
@@ -72,9 +283,6 @@ export default function StepDIYGenerator({
 
   // generator options that meet or exceed required power (with 20% safety margin)
   const requiredKw = computedPowerKw * 1.2;
-  const fittingGenerators = dieselGenerators.filter(g => g.powerKw >= requiredKw);
-  const allGenerators     = dieselGenerators;
-
   const handleVoltChange = (idx: number) => {
     setSelectedVoltIdx(idx);
     if (hasValidInput) {
@@ -120,219 +328,38 @@ export default function StepDIYGenerator({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-      {/* Yes/No */}
-      <div>
-        <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem', fontSize: '0.95rem' }}>
-          {lang === 'en' ? 'Do you need a diesel generator?' : '是否需要配置柴油发电机？'}
-        </div>
-        <div style={{ display: 'flex', gap: '0.75rem' }}>
-          {[
-            { val: true,  labelZh: '是，需要配置',   labelEn: 'Yes, include generator' },
-            { val: false, labelZh: '否，不需要',       labelEn: 'No, PV + storage only' },
-          ].map(opt => {
-            const active = hasGenerator === opt.val;
-            return (
-              <div
-                key={String(opt.val)}
-                onClick={() => onUpdate({ hasGenerator: opt.val, dieselCapacityKw: opt.val ? (dieselCapacityKw ?? 0) : 0 })}
-                style={{
-                  flex: 1, padding: '1rem 1.25rem', textAlign: 'center',
-                  border: `2px solid ${active ? '#1a365d' : '#e2e8f0'}`,
-                  borderRadius: '12px', cursor: 'pointer',
-                  background: active ? '#ebf4ff' : 'white',
-                  transition: 'all 0.18s',
-                }}
-              >
-                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#2d3748' }}>
-                  {lang === 'en' ? opt.labelEn : opt.labelZh}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 如果选了需要柴发 */}
+      <GeneratorNeedSelector
+        value={hasGenerator}
+        capacityKw={dieselCapacityKw}
+        lang={lang}
+        onUpdate={onUpdate}
+      />
       {hasGenerator === true && (
         <>
-          {/* 电压选择 */}
-          <div>
-            <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.93rem' }}>
-              {lang === 'en' ? 'Maximum Load Voltage' : '最大负载电压'}
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-              {VOLTAGE_OPTIONS.map((opt, idx) => {
-                const active = selectedVoltIdx === idx;
-                return (
-                  <button
-                    key={idx}
-                    onClick={() => handleVoltChange(idx)}
-                    style={{
-                      padding: '0.45rem 1rem',
-                      fontSize: '0.88rem',
-                      border: `2px solid ${active ? '#1a365d' : '#e2e8f0'}`,
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      background: active ? '#1a365d' : 'white',
-                      color: active ? 'white' : '#4a5568',
-                      fontWeight: active ? 700 : 400,
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {lang === 'en' ? opt.labelEn : opt.labelZh}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 电流输入 */}
-          <div>
-            <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.93rem' }}>
-              {lang === 'en' ? 'Maximum Load Current (A)' : '最大负载电流 (A)'}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <input
-                type="number"
-                value={currentInput}
-                onChange={e => handleCurrentChange(e.target.value)}
-                placeholder={lang === 'en' ? 'e.g. 100' : '如：100'}
-                min={1}
-                step={1}
-                style={{
-                  padding: '0.6rem 1rem',
-                  border: '1px solid #cbd5e0',
-                  borderRadius: '8px',
-                  fontSize: '1rem',
-                  width: '140px',
-                }}
-              />
-              <span style={{ color: '#718096', fontSize: '0.9rem' }}>A</span>
-            </div>
-          </div>
-
-          {/* 功率推算结果 */}
+          <GeneratorPowerInput
+            selectedVoltIdx={selectedVoltIdx}
+            currentInput={currentInput}
+            computedPowerKw={computedPowerKw}
+            requiredKw={requiredKw}
+            lang={lang}
+            onVoltChange={handleVoltChange}
+            onCurrentChange={handleCurrentChange}
+          />
           {computedPowerKw > 0 && (
-            <div style={{
-              padding: '0.85rem 1.1rem',
-              background: 'var(--theme-tone-bg)',
-              border: '1px solid var(--theme-tone-border)',
-              borderLeft: '4px solid var(--theme-tone-accent)',
-              borderRadius: '8px',
-              fontSize: '0.87rem',
-              color: 'var(--theme-tone-text)',
-            }}>
-              <strong>{lang === 'en' ? 'Max Load Power: ' : '最大负载功率：'}</strong>
-              {voltOpt.isThree
-                ? `√3 × ${voltOpt.v}V × ${currentA || '?'}A × PF(${POWER_FACTOR})`
-                : `${voltOpt.v}V × ${currentA || '?'}A × PF(${POWER_FACTOR})`}
-              {' = '}
-              <strong>{computedPowerKw.toFixed(1)} kW</strong>
-              &nbsp;
-              {lang === 'en'
-                ? `→ Required generator ≥ ${requiredKw.toFixed(1)} kW (×1.2 safety margin)`
-                : `→ 需要柴发 ≥ ${requiredKw.toFixed(1)} kW（×1.2 安全系数）`}
-            </div>
+            <GeneratorOptions
+              generators={dieselGenerators}
+              requiredKw={requiredKw}
+              capacityKw={dieselCapacityKw}
+              hasGenerator={hasGenerator}
+              lang={lang}
+              onSelect={handleSelectGenerator}
+            />
           )}
-
-          {/* 适配柴发型号 */}
-          {computedPowerKw > 0 && (
-            <div>
-              <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.6rem', fontSize: '0.93rem' }}>
-                {lang === 'en' ? 'Matching Diesel Generators' : '适配柴油发电机'}
-                {fittingGenerators.length === 0 && (
-                  <span style={{ fontWeight: 400, color: 'var(--theme-tone-warm-text)', marginLeft: '0.5rem', fontSize: '0.85rem' }}>
-                    ({lang === 'en' ? 'All shown as reference' : '无完全匹配，供参考'})
-                  </span>
-                )}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                {(fittingGenerators.length > 0 ? fittingGenerators : allGenerators).map(gen => {
-                  const active = dieselCapacityKw === gen.powerKw && hasGenerator;
-                  const fits   = gen.powerKw >= requiredKw;
-                  return (
-                    <div
-                      key={gen.model}
-                      onClick={() => handleSelectGenerator(gen.powerKw)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '1rem',
-                        padding: '0.85rem 1.1rem',
-                        border: `2px solid ${active ? '#1a365d' : fits ? 'var(--theme-tone-border)' : '#e2e8f0'}`,
-                        borderRadius: '10px', cursor: 'pointer',
-                        background: active ? '#ebf4ff' : fits ? 'var(--theme-tone-bg)' : 'white',
-                        transition: 'all 0.18s',
-                      }}
-                    >
-                      <div style={{
-                        width: '18px', height: '18px', borderRadius: '50%', flexShrink: 0,
-                        border: `2px solid ${active ? '#1a365d' : '#cbd5e0'}`,
-                        background: active ? '#1a365d' : 'transparent',
-                      }} />
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: 700, color: '#2d3748', fontSize: '1rem' }}>
-                          {gen.powerKw} kW
-                        </span>
-                        <span style={{ fontSize: '0.82rem', color: '#718096', marginLeft: '0.5rem' }}>
-                          {getLocalizedProductLabel(gen, lang)}
-                        </span>
-                        {fits && (
-                          <span style={{
-                            fontSize: '0.68rem', fontWeight: 700, marginLeft: '0.5rem',
-                            padding: '0.1rem 0.4rem', borderRadius: '8px',
-                            background: 'var(--theme-brand-100)', color: 'var(--theme-tone-text)',
-                          }}>
-                            {lang === 'en' ? '✓ Suitable' : '✓ 适配'}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ textAlign: 'right', flexShrink: 0, fontSize: '0.85rem', color: '#718096' }}>
-                        ${gen.priceUsd.toLocaleString()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* 新购 / 已有 */}
-          {dieselCapacityKw && dieselCapacityKw > 0 && (
-            <div>
-              <div style={{ fontWeight: 600, color: '#2d3748', marginBottom: '0.5rem', fontSize: '0.93rem' }}>
-                {lang === 'en' ? 'Generator Ownership' : '柴发来源'}
-              </div>
-              <div style={{ display: 'flex', gap: '0.75rem' }}>
-                {[
-                  { isNew: true,  labelZh: '需购置（计入成本）', labelEn: 'Purchase new (include in CAPEX)' },
-                  { isNew: false, labelZh: '已有（不计成本）',   labelEn: 'Already owned (exclude CAPEX)'  },
-                ].map(opt => {
-                  const active = dieselIsNew === opt.isNew;
-                  return (
-                    <div
-                      key={String(opt.isNew)}
-                      onClick={() => handleOwnership(opt.isNew)}
-                      style={{
-                        flex: 1, padding: '0.75rem 1rem', textAlign: 'center',
-                        border: `2px solid ${active ? '#1a365d' : '#e2e8f0'}`,
-                        borderRadius: '10px', cursor: 'pointer',
-                        background: active ? '#ebf4ff' : 'white',
-                        fontSize: '0.88rem', transition: 'all 0.18s',
-                      }}
-                    >
-                      <div style={{ fontWeight: active ? 700 : 400, color: '#2d3748' }}>
-                        {lang === 'en' ? opt.labelEn : opt.labelZh}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          {Boolean(dieselCapacityKw && dieselCapacityKw > 0) && (
+            <OwnershipSelector isNew={dieselIsNew} lang={lang} onSelect={handleOwnership} />
           )}
         </>
       )}
-
-      {/* 不需要柴发 */}
       {hasGenerator === false && (
         <div style={{
           padding: '0.85rem 1.1rem',
@@ -347,8 +374,6 @@ export default function StepDIYGenerator({
             : '系统将仅依赖光伏+储能运行。请确保太阳能资源充足，且储能容量满足负载需求。'}
         </div>
       )}
-
-      {/* 说明 */}
       <div style={{
         padding: '0.7rem 1rem',
         background: 'var(--theme-tone-warm-bg)',
@@ -362,7 +387,6 @@ export default function StepDIYGenerator({
           ? 'In off-grid microgrids, diesel generators supplement PV and storage during prolonged cloudy periods or high-load events. Generator sizing should include a 20% safety margin above calculated peak load.'
           : '在离网微电网中，柴油发电机在连续阴天或高负载时作为光伏和储能的补充。发电机定容须在计算峰值功率基础上留20%安全余量。'}
       </div>
-
     </div>
   );
 }

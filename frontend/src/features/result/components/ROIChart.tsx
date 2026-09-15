@@ -16,99 +16,115 @@ interface ROIChartProps {
   sellingPrice: number;
 }
 
-export default function ROIChart({
-  comparisonTable,
-  breakevenYear,
-  lcoeCrossoverYear,
-  sellingPrice,
-}: ROIChartProps) {
-  const { lang } = useLang();
+type Lang = ReturnType<typeof useLang>['lang'];
 
-  const L = {
-    title:         lang === 'en' ? 'ROI Curve (Microgrid vs Diesel-only)' : '投资回报曲线（微电网 vs 纯柴油）',
-    noData:        lang === 'en' ? 'No data available' : '暂无数据',
-    titleShort:    lang === 'en' ? 'ROI Curve' : '投资回报曲线',
-    totalCapex:    lang === 'en' ? 'Total Investment' : '系统总投资',
-    payback:       lang === 'en' ? 'Payback Year' : '回本年限',
-    yearLabel:     lang === 'en' ? 'Yr ' : '第 ',
-    yearSuffix:    lang === 'en' ? '' : ' 年',
-    lcoeCross:     lang === 'en' ? 'LCOE Crossover' : 'LCOE 交叉年',
-    cumCost:       lang === 'en' ? 'Cumulative Cost Comparison (USD)' : '累计总投入对比（USD）',
-    xAxis:         lang === 'en' ? 'Year' : '年份',
-    yAxis:         lang === 'en' ? 'USD (K)' : 'USD（千）',
-    mgCumul:       lang === 'en' ? 'MG Cumulative' : '微电网累计投入',
-    dieselCumul:   lang === 'en' ? 'Diesel Cumulative' : '纯柴油累计投入',
-    cumulRev:      lang === 'en' ? 'Cumulative Revenue (positive = break-even)' : '累计收益（正=回本）',
-    lcoeCmp:       lang === 'en' ? 'LCOE Comparison ($/kWh)' : '度电成本 LCOE 对比（$/kWh）',
-    mgLcoe:        lang === 'en' ? 'MG LCOE' : '微电网 LCOE',
-    dieselLcoe:    lang === 'en' ? 'Diesel LCOE' : '纯柴油 LCOE',
-    note1:         lang === 'en' ? 'MG Cumulative = initial CAPEX + annual O&M + fuel cost' : '微电网累计投入 = 初始 CAPEX + 历年运维 + 燃料成本',
-    note2:         lang === 'en' ? 'Diesel Cumulative = annual O&M + fuel cost (no CAPEX spread)' : '纯柴油累计投入 = 历年柴油发电机运维 + 燃料成本（无初始投资分摊）',
-    note3:         lang === 'en' ? 'Cumulative Revenue = Diesel Cumulative − MG Cumulative (positive = break-even)' : '累计收益 = 纯柴油累计投入 − 微电网累计投入（正值表示已回本）',
-    note4:         lang === 'en' ? 'LCOE Crossover = year when MG cost per kWh first drops below diesel' : 'LCOE 交叉 = 微电网每度电成本首次低于纯柴油的年份',
+function localized(lang: Lang, english: string, chinese: string): string {
+  return lang === 'en' ? english : chinese;
+}
+
+function getLabels(lang: Lang) {
+  return {
+    title: localized(lang, 'ROI Curve (Microgrid vs Diesel-only)', '投资回报曲线（微电网 vs 纯柴油）'),
+    noData: localized(lang, 'No data available', '暂无数据'),
+    titleShort: localized(lang, 'ROI Curve', '投资回报曲线'),
+    totalCapex: localized(lang, 'Total Investment', '系统总投资'),
+    payback: localized(lang, 'Payback Year', '回本年限'),
+    yearLabel: localized(lang, 'Yr ', '第 '),
+    yearSuffix: localized(lang, '', ' 年'),
+    lcoeCross: localized(lang, 'LCOE Crossover', 'LCOE 交叉年'),
+    cumCost: localized(lang, 'Cumulative Cost Comparison (USD)', '累计总投入对比（USD）'),
+    xAxis: localized(lang, 'Year', '年份'),
+    yAxis: localized(lang, 'USD (K)', 'USD（千）'),
+    mgCumul: localized(lang, 'MG Cumulative', '微电网累计投入'),
+    dieselCumul: localized(lang, 'Diesel Cumulative', '纯柴油累计投入'),
+    cumulRev: localized(lang, 'Cumulative Revenue (positive = break-even)', '累计收益（正=回本）'),
+    lcoeCmp: localized(lang, 'LCOE Comparison ($/kWh)', '度电成本 LCOE 对比（$/kWh）'),
+    mgLcoe: localized(lang, 'MG LCOE', '微电网 LCOE'),
+    dieselLcoe: localized(lang, 'Diesel LCOE', '纯柴油 LCOE'),
+    note1: localized(lang, 'MG Cumulative = initial CAPEX + annual O&M + fuel cost', '微电网累计投入 = 初始 CAPEX + 历年运维 + 燃料成本'),
+    note2: localized(lang, 'Diesel Cumulative = annual O&M + fuel cost (no CAPEX spread)', '纯柴油累计投入 = 历年柴油发电机运维 + 燃料成本（无初始投资分摊）'),
+    note3: localized(lang, 'Cumulative Revenue = Diesel Cumulative − MG Cumulative (positive = break-even)', '累计收益 = 纯柴油累计投入 − 微电网累计投入（正值表示已回本）'),
+    note4: localized(lang, 'LCOE Crossover = year when MG cost per kWh first drops below diesel', 'LCOE 交叉 = 微电网每度电成本首次低于纯柴油的年份'),
   };
+}
 
-  if (!comparisonTable || comparisonTable.length === 0) {
-    return (
-      <div className="roi-chart-container">
-        <h3 className="chart-title">{L.titleShort}</h3>
-        <p style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>{L.noData}</p>
-      </div>
-    );
-  }
+type Labels = ReturnType<typeof getLabels>;
+type ChartData = Record<string, string | number>[];
 
-  const chartData = comparisonTable.map(row => ({
+function buildChartData(comparisonTable: ComparisonRow[], labels: Labels): ChartData {
+  return comparisonTable.map(row => ({
     year: row.year,
-    [L.mgCumul]:     Math.round(row.mgCumulative),
-    [L.dieselCumul]: Math.round(row.dieselCumulative),
-    [L.cumulRev]:    Math.round(row.cumulativeRevenue),
-    [L.mgLcoe]:      row.mgLcoe,
-    [L.dieselLcoe]:  row.dieselLcoe,
+    [labels.mgCumul]: Math.round(row.mgCumulative),
+    [labels.dieselCumul]: Math.round(row.dieselCumulative),
+    [labels.cumulRev]: Math.round(row.cumulativeRevenue),
+    [labels.mgLcoe]: row.mgLcoe,
+    [labels.dieselLcoe]: row.dieselLcoe,
   }));
+}
 
-  const fmtUsd = (v: number | undefined) => {
-    if (v === undefined || v === null) return '';
-    return `$${Math.round(v).toLocaleString()}`;
-  };
+function formatUsd(value: number | null | undefined): string {
+  return value == null ? '' : `$${Math.round(value).toLocaleString()}`;
+}
 
+function NoData({ labels }: { labels: Labels }) {
   return (
     <div className="roi-chart-container">
-      <h3 className="chart-title">{L.title}</h3>
+      <h3 className="chart-title">{labels.titleShort}</h3>
+      <p style={{ textAlign: 'center', color: '#666', padding: '2rem' }}>{labels.noData}</p>
+    </div>
+  );
+}
 
-      <div className="chart-info-bar">
-        <div className="chart-badge">
-          <span className="badge-label">{L.totalCapex}</span>
-          <span className="badge-value">${sellingPrice.toLocaleString()}</span>
-        </div>
-        {breakevenYear && (
-          <div className="chart-badge success">
-            <span className="badge-label">{L.payback}</span>
-            <span className="badge-value">{L.yearLabel}{breakevenYear}{L.yearSuffix}</span>
-          </div>
-        )}
-        {lcoeCrossoverYear && (
-          <div className="chart-badge info">
-            <span className="badge-label">{L.lcoeCross}</span>
-            <span className="badge-value">{L.yearLabel}{lcoeCrossoverYear}{L.yearSuffix}</span>
-          </div>
-        )}
+function ChartInfoBar({ labels, sellingPrice, breakevenYear, lcoeCrossoverYear }: {
+  labels: Labels;
+  sellingPrice: number;
+  breakevenYear: number | null;
+  lcoeCrossoverYear: number | null;
+}) {
+  return (
+    <div className="chart-info-bar">
+      <div className="chart-badge">
+        <span className="badge-label">{labels.totalCapex}</span>
+        <span className="badge-value">${sellingPrice.toLocaleString()}</span>
       </div>
+      {breakevenYear && (
+        <div className="chart-badge success">
+          <span className="badge-label">{labels.payback}</span>
+          <span className="badge-value">{labels.yearLabel}{breakevenYear}{labels.yearSuffix}</span>
+        </div>
+      )}
+      {lcoeCrossoverYear && (
+        <div className="chart-badge info">
+          <span className="badge-label">{labels.lcoeCross}</span>
+          <span className="badge-value">{labels.yearLabel}{lcoeCrossoverYear}{labels.yearSuffix}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {/* Cumulative cost comparison */}
+function CumulativeCostChart({ chartData, labels, breakevenYear, lang }: {
+  chartData: ChartData;
+  labels: Labels;
+  breakevenYear: number | null;
+  lang: Lang;
+}) {
+  return (
+    <>
       <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: '#4a5568', fontSize: '0.9rem' }}>
-        {L.cumCost}
+        {labels.cumCost}
       </div>
       <ResponsiveContainer width="100%" height={320}>
         <ComposedChart data={chartData} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-          <XAxis dataKey="year" label={{ value: L.xAxis, position: 'insideBottom', offset: -2, fontSize: 12 }} />
+          <XAxis dataKey="year" label={{ value: labels.xAxis, position: 'insideBottom', offset: -2, fontSize: 12 }} />
           <YAxis
             tickFormatter={v => `$${(v / 1000).toFixed(0)}k`}
-            label={{ value: L.yAxis, angle: -90, position: 'insideLeft', fontSize: 12 }}
+            label={{ value: labels.yAxis, angle: -90, position: 'insideLeft', fontSize: 12 }}
           />
           <Tooltip
-            formatter={(value: any, name: string) => [fmtUsd(Number(value)), name]}
-            labelFormatter={label => `${L.yearLabel}${label}${L.yearSuffix}`}
+            formatter={(value: any, name: string) => [formatUsd(Number(value)), name]}
+            labelFormatter={label => `${labels.yearLabel}${label}${labels.yearSuffix}`}
           />
           <Legend />
           {breakevenYear && (
@@ -116,41 +132,51 @@ export default function ROIChart({
               x={breakevenYear}
               stroke="#48678c"
               strokeDasharray="4 4"
-              label={{ value: `${lang === 'en' ? 'Breakeven' : '回本'} Y${breakevenYear}`, fill: '#1a365d', fontSize: 11 }}
+              label={{ value: `${localized(lang, 'Breakeven', '回本')} Y${breakevenYear}`, fill: '#1a365d', fontSize: 11 }}
             />
           )}
           <Area
             type="monotone"
-            dataKey={L.dieselCumul}
+            dataKey={labels.dieselCumul}
             fill="#efe3e3"
             stroke="#b77979"
             strokeWidth={2}
             fillOpacity={0.5}
-            name={L.dieselCumul}
+            name={labels.dieselCumul}
           />
           <Line
             type="monotone"
-            dataKey={L.mgCumul}
+            dataKey={labels.mgCumul}
             stroke="#2c5282"
             strokeWidth={2.5}
             dot={false}
-            name={L.mgCumul}
+            name={labels.mgCumul}
           />
           <Line
             type="monotone"
-            dataKey={L.cumulRev}
+            dataKey={labels.cumulRev}
             stroke="#48678c"
             strokeWidth={2}
             strokeDasharray="5 5"
             dot={{ r: 3 }}
-            name={L.cumulRev}
+            name={labels.cumulRev}
           />
         </ComposedChart>
       </ResponsiveContainer>
+    </>
+  );
+}
 
-      {/* LCOE comparison */}
+function LcoeChart({ chartData, labels, lcoeCrossoverYear, lang }: {
+  chartData: ChartData;
+  labels: Labels;
+  lcoeCrossoverYear: number | null;
+  lang: Lang;
+}) {
+  return (
+    <>
       <div style={{ marginTop: '1.5rem', marginBottom: '0.5rem', fontWeight: 600, color: '#4a5568', fontSize: '0.9rem' }}>
-        {L.lcoeCmp}
+        {labels.lcoeCmp}
       </div>
       <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
@@ -159,7 +185,7 @@ export default function ROIChart({
           <YAxis tickFormatter={v => `$${Number(v).toFixed(2)}`} />
           <Tooltip
             formatter={(v: any, name: string) => [`$${Number(v).toFixed(3)}/kWh`, name]}
-            labelFormatter={label => `${L.yearLabel}${label}${L.yearSuffix}`}
+            labelFormatter={label => `${labels.yearLabel}${label}${labels.yearSuffix}`}
           />
           <Legend />
           {lcoeCrossoverYear && (
@@ -167,34 +193,68 @@ export default function ROIChart({
               x={lcoeCrossoverYear}
               stroke="#946c38"
               strokeDasharray="4 4"
-              label={{ value: `${lang === 'en' ? 'LCOE Crossover' : 'LCOE交叉'} Y${lcoeCrossoverYear}`, fill: '#7b5b2f', fontSize: 11 }}
+              label={{ value: `${localized(lang, 'LCOE Crossover', 'LCOE交叉')} Y${lcoeCrossoverYear}`, fill: '#7b5b2f', fontSize: 11 }}
             />
           )}
           <Line
             type="monotone"
-            dataKey={L.mgLcoe}
+            dataKey={labels.mgLcoe}
             stroke="#2c5282"
             strokeWidth={2}
             dot={false}
-            name={L.mgLcoe}
+            name={labels.mgLcoe}
           />
           <Line
             type="monotone"
-            dataKey={L.dieselLcoe}
+            dataKey={labels.dieselLcoe}
             stroke="#b77979"
             strokeWidth={2}
             dot={false}
-            name={L.dieselLcoe}
+            name={labels.dieselLcoe}
           />
         </ComposedChart>
       </ResponsiveContainer>
+    </>
+  );
+}
 
-      <div className="chart-notes">
-        <p>• <strong>{L.mgCumul}</strong>: {L.note1}</p>
-        <p>• <strong>{L.dieselCumul}</strong>: {L.note2}</p>
-        <p>• <strong>{lang === 'en' ? 'Cumulative Revenue' : '累计收益'}</strong>: {L.note3}</p>
-        <p>• <strong>{L.lcoeCross}</strong>: {L.note4}</p>
-      </div>
+function ChartNotes({ labels, lang }: { labels: Labels; lang: Lang }) {
+  return (
+    <div className="chart-notes">
+      <p>• <strong>{labels.mgCumul}</strong>: {labels.note1}</p>
+      <p>• <strong>{labels.dieselCumul}</strong>: {labels.note2}</p>
+      <p>• <strong>{localized(lang, 'Cumulative Revenue', '累计收益')}</strong>: {labels.note3}</p>
+      <p>• <strong>{labels.lcoeCross}</strong>: {labels.note4}</p>
+    </div>
+  );
+}
+
+export default function ROIChart({
+  comparisonTable,
+  breakevenYear,
+  lcoeCrossoverYear,
+  sellingPrice,
+}: ROIChartProps) {
+  const { lang } = useLang();
+  const labels = getLabels(lang);
+
+  if (!comparisonTable || comparisonTable.length === 0) {
+    return <NoData labels={labels} />;
+  }
+
+  const chartData = buildChartData(comparisonTable, labels);
+  return (
+    <div className="roi-chart-container">
+      <h3 className="chart-title">{labels.title}</h3>
+      <ChartInfoBar
+        labels={labels}
+        sellingPrice={sellingPrice}
+        breakevenYear={breakevenYear}
+        lcoeCrossoverYear={lcoeCrossoverYear}
+      />
+      <CumulativeCostChart chartData={chartData} labels={labels} breakevenYear={breakevenYear} lang={lang} />
+      <LcoeChart chartData={chartData} labels={labels} lcoeCrossoverYear={lcoeCrossoverYear} lang={lang} />
+      <ChartNotes labels={labels} lang={lang} />
     </div>
   );
 }

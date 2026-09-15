@@ -8,114 +8,127 @@ interface ConfigSummaryPanelProps {
   scenario: 'known-load' | 'diy' | 'custom';
 }
 
-export default function ConfigSummaryPanel({ config, scenario }: ConfigSummaryPanelProps) {
-  const { lang } = useLang();
-  const areaM2 = config.availableAreaM2 ?? 0;
-  const effectiveScenario = scenario === 'custom' ? (config.customFlowBranch ?? 'known-load') : scenario;
+type Lang = ReturnType<typeof useLang>['lang'];
 
-  const items: { label: string; value: string; subItems?: { label: string; value: string }[] }[] = [];
+interface SummaryItem {
+  label: string;
+  value: string;
+  subItems?: SummaryItem[];
+}
 
-  if (effectiveScenario === 'known-load') {
-    items.push({
-      label: lang === 'en' ? 'Installation Region' : '安装地区',
+function localized(lang: Lang, english: string, chinese: string): string {
+  return lang === 'en' ? english : chinese;
+}
+
+function valueWithUnit(value: number | null | undefined, unit: string): string {
+  return value != null ? `${value} ${unit}` : '—';
+}
+
+function buildKnownLoadItems(config: ConfigData, lang: Lang): SummaryItem[] {
+  const psh = config.peakSunHoursPerDay;
+  const eff = config.annualEffHours;
+  const irrad = (config as any).annualKwhPerM2;
+  const hasSolar = psh != null || eff != null || irrad != null;
+
+  return [
+    {
+      label: localized(lang, 'Installation Region', '安装地区'),
       value: config.locationName || '—',
-    });
-
-    const psh = config.peakSunHoursPerDay;
-    const eff = config.annualEffHours;
-    const irrad = (config as any).annualKwhPerM2;
-    const hasSolar = psh != null || eff != null || irrad != null;
-
-    items.push({
-      label: lang === 'en' ? 'Solar Assessment' : '日照评估结果',
+    },
+    {
+      label: localized(lang, 'Solar Assessment', '日照评估结果'),
       value: hasSolar ? '' : '—',
       subItems: hasSolar
         ? [
-            { label: lang === 'en' ? 'Peak sun hours' : '峰值日照', value: psh != null ? `${psh} h/d` : '—' },
-            { label: lang === 'en' ? 'Annual eff. hours' : '年有效小时', value: eff != null ? `${eff} h/a` : '—' },
-            { label: lang === 'en' ? 'Annual irradiance' : '年辐照量', value: formatIrradianceDualFtFirst(irrad, lang).combined },
+            { label: localized(lang, 'Peak sun hours', '峰值日照'), value: valueWithUnit(psh, 'h/d') },
+            { label: localized(lang, 'Annual eff. hours', '年有效小时'), value: valueWithUnit(eff, 'h/a') },
+            { label: localized(lang, 'Annual irradiance', '年辐照量'), value: formatIrradianceDualFtFirst(irrad, lang).combined },
           ]
         : undefined,
-    });
-  }
+    },
+  ];
+}
 
-  if (effectiveScenario === 'diy') {
-    items.push({
-      label: lang === 'en' ? 'Site Area' : '场地面积',
-      value: formatAreaDual(areaM2, lang).combined,
-    });
+function buildDiyItems(config: ConfigData, lang: Lang): SummaryItem[] {
+  const inverterKw = (config as any).inverterKw ?? 0;
+  const inverterCount = (config as any).inverterCount ?? 0;
+  const totalInverterKw = (config as any).totalInverterKw ?? 0;
+  const inverterSummary = inverterKw > 0 && inverterCount > 0 ? `${inverterKw} kW × ${inverterCount}` : '—';
 
-    const inverterKw = (config as any).inverterKw ?? 0;
-    const inverterCount = (config as any).inverterCount ?? 0;
-    const totalInverterKw = (config as any).totalInverterKw ?? 0;
-    const inverterSummary = inverterKw > 0 && inverterCount > 0 ? `${inverterKw} kW × ${inverterCount}` : '—';
-
-    items.push({
-      label: lang === 'en' ? 'Inverter Setup' : '逆变器情况',
+  return [
+    {
+      label: localized(lang, 'Site Area', '场地面积'),
+      value: formatAreaDual(config.availableAreaM2 ?? 0, lang).combined,
+    },
+    {
+      label: localized(lang, 'Inverter Setup', '逆变器情况'),
       value: inverterSummary,
       subItems: [
-        {
-          label: lang === 'en' ? 'Unit Power' : '单台功率',
-          value: inverterKw > 0 ? `${inverterKw} kW` : '—',
-        },
-        {
-          label: lang === 'en' ? 'Quantity' : '台数',
-          value: inverterCount > 0 ? `${inverterCount}` : '—',
-        },
-        {
-          label: lang === 'en' ? 'Total Power' : '总功率',
-          value: totalInverterKw > 0 ? `${Number(totalInverterKw).toFixed(1)} kW` : '—',
-        },
+        { label: localized(lang, 'Unit Power', '单台功率'), value: inverterKw > 0 ? `${inverterKw} kW` : '—' },
+        { label: localized(lang, 'Quantity', '台数'), value: inverterCount > 0 ? `${inverterCount}` : '—' },
+        { label: localized(lang, 'Total Power', '总功率'), value: totalInverterKw > 0 ? `${Number(totalInverterKw).toFixed(1)} kW` : '—' },
       ],
-    });
-  } else {
-    items.push({
-      label: lang === 'en' ? 'Voltage Level' : '电压等级',
-      value: config.voltageLevel || '—',
-    });
-  }
+    },
+  ];
+}
 
+function buildEmsItem(config: ConfigData, lang: Lang): SummaryItem {
   const emsBase = config.emsControlMethod === 'edge'
-    ? (lang === 'en' ? 'Edge Control' : '边缘控制')
+    ? localized(lang, 'Edge Control', '边缘控制')
     : config.emsControlMethod || '—';
   const addons = (config.emsAddons ?? []) as EMSAddon[];
   const addonLabels: Record<EMSAddon, string> = {
-    cloud: lang === 'en' ? 'Cloud' : '云端',
-    prediction: lang === 'en' ? 'Prediction' : '预测',
+    cloud: localized(lang, 'Cloud', '云端'),
+    prediction: localized(lang, 'Prediction', '预测'),
   };
-  const emsVal = addons.length > 0
-    ? `${emsBase} + ${addons.map(a => addonLabels[a]).join(', ')}`
-    : emsBase;
+  return {
+    label: localized(lang, 'EMS Control', 'EMS控制方式'),
+    value: addons.length > 0 ? `${emsBase} + ${addons.map(a => addonLabels[a]).join(', ')}` : emsBase,
+  };
+}
 
-  items.push({
-    label: lang === 'en' ? 'EMS Control' : 'EMS控制方式',
-    value: emsVal,
-  });
+function SummaryItemView({ item }: { item: SummaryItem }) {
+  return (
+    <div className="config-summary-panel__item">
+      <div className="config-summary-panel__row">
+        <span className="config-summary-panel__label">{item.label}</span>
+        {item.value && <span className="config-summary-panel__value">{item.value}</span>}
+      </div>
+      {item.subItems && (
+        <div className="config-summary-panel__sub">
+          {item.subItems.map(subItem => (
+            <div key={subItem.label} className="config-summary-panel__sub-row">
+              <span className="config-summary-panel__sub-label">{subItem.label}</span>
+              <span className="config-summary-panel__sub-value">{subItem.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildSummaryItems(config: ConfigData, scenario: ConfigSummaryPanelProps['scenario'], lang: Lang): SummaryItem[] {
+  const effectiveScenario = scenario === 'custom' ? (config.customFlowBranch ?? 'known-load') : scenario;
+  const items = effectiveScenario === 'known-load' ? buildKnownLoadItems(config, lang) : [];
+  items.push(...(effectiveScenario === 'diy'
+    ? buildDiyItems(config, lang)
+    : [{ label: localized(lang, 'Voltage Level', '电压等级'), value: config.voltageLevel || '—' }]));
+  items.push(buildEmsItem(config, lang));
+  return items;
+}
+
+export default function ConfigSummaryPanel({ config, scenario }: ConfigSummaryPanelProps) {
+  const { lang } = useLang();
+  const items = buildSummaryItems(config, scenario, lang);
 
   return (
     <div className="config-summary-panel">
       <div className="config-summary-panel__title">
-        {lang === 'en' ? 'Configuration Summary' : '配置摘要'}
+        {localized(lang, 'Configuration Summary', '配置摘要')}
       </div>
       <div className="config-summary-panel__items">
-        {items.map((item, i) => (
-          <div key={i} className="config-summary-panel__item">
-            <div className="config-summary-panel__row">
-              <span className="config-summary-panel__label">{item.label}</span>
-              {item.value && <span className="config-summary-panel__value">{item.value}</span>}
-            </div>
-            {item.subItems && (
-              <div className="config-summary-panel__sub">
-                {item.subItems.map((s, j) => (
-                  <div key={j} className="config-summary-panel__sub-row">
-                    <span className="config-summary-panel__sub-label">{s.label}</span>
-                    <span className="config-summary-panel__sub-value">{s.value}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+        {items.map(item => <SummaryItemView key={item.label} item={item} />)}
       </div>
     </div>
   );
