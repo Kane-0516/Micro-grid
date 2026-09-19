@@ -5,8 +5,9 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-import httpx
 from fastapi import APIRouter
+
+from app.services.nasa_power import fetch_json
 
 router = APIRouter(prefix="/api", tags=["products"])
 
@@ -95,10 +96,9 @@ def _fetch_nasa_power_solar_hours(lat: float, lon: float, year: int) -> dict:
         "format": "JSON",
     }
 
-    with httpx.Client(timeout=_NASA_POWER_TIMEOUT) as client:
-        response = client.get(_NASA_POWER_DAILY_URL, params=params)
-        response.raise_for_status()
-        payload = response.json()
+    payload = fetch_json(
+        _NASA_POWER_DAILY_URL, params, timeout=_NASA_POWER_TIMEOUT
+    )
 
     parameter_block = (
         payload.get("properties", {})

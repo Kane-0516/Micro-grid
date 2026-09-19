@@ -7,14 +7,17 @@
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta, timezone
 from functools import lru_cache
 
-import httpx
 import numpy as np
 import pandas as pd
 import pypsa
 from pvlib import inverter, irradiance, pvsystem, solarposition, temperature
+
+from app.services.nasa_power import fetch_json
 
 warnings.filterwarnings("ignore")
 
@@ -27,7 +30,8 @@ _NASA_POWER_HOURLY_URL = "https://power.larc.nasa.gov/api/temporal/hourly/point"
 _NASA_POWER_CLIMATOLOGY_URL = (
     "https://power.larc.nasa.gov/api/temporal/climatology/point"
 )
-_NASA_POWER_TIMEOUT = 12.0
+_NASA_POWER_TIMEOUT = 30.0  # measured: 7-13 s per request, 10 s for climatology
+_PREFETCH_WORKERS = 6  # polite to a free public API; 20 years -> ~4 rounds
 _NASA_POWER_HOURLY_PARAMETERS = {
     "ALLSKY_SFC_SW_DWN": "ghi_wm2",
     "T2M": "temp_air_c",
@@ -53,15 +57,23 @@ def _parse_nasa_parameter(
     parameter_block: dict,
     snapshots: pd.DatetimeIndex,
 ) -> pd.Series:
-    values: dict[pd.Timestamp, float] = {}
+    keys: list[str] = []
+    values: list[float] = []
     for key, raw_value in parameter_block.items():
         try:
             value = float(raw_value)
         except (TypeError, ValueError):
             continue
         if value > -900:
-            values[pd.to_datetime(str(key), format="%Y%m%d%H")] = value
-    return pd.Series(values, dtype=float).sort_index().reindex(snapshots)
+            keys.append(str(key))
+            values.append(value)
+    if not keys:
+        return pd.Series(dtype=float).reindex(snapshots)
+    # One vectorised parse: the per-key to_datetime loop cost ~0.5 s per
+    # parameter-year, which dominated cold starts on small sandboxes.
+    index = pd.to_datetime(keys, format="%Y%m%d%H")
+    series = pd.Series(values, index=index, dtype=float)
+    return series.sort_index().reindex(snapshots)
 
 
 @lru_cache(maxsize=256)
@@ -79,10 +91,9 @@ def _fetch_nasa_power_hourly_weather(
         "time-standard": "LST",
     }
 
-    with httpx.Client(timeout=_NASA_POWER_TIMEOUT) as client:
-        response = client.get(_NASA_POWER_HOURLY_URL, params=params)
-        response.raise_for_status()
-        payload = response.json()
+    payload = fetch_json(
+        _NASA_POWER_HOURLY_URL, params, timeout=_NASA_POWER_TIMEOUT
+    )
 
     snapshots = _simulation_snapshots(year)
     parameter_data = payload.get("properties", {}).get("parameter", {})
@@ -132,6 +143,29 @@ def _fetch_nasa_power_hourly_irradiance(
     return (weather["ghi_wm2"] / 1000.0).rename("ghi_kwh_m2")
 
 
+def prefetch_nasa_power_hourly_weather(
+    latitude: float, longitude: float, years: Iterable[int]
+) -> None:
+    """Warm the hourly-weather cache for ``years`` with concurrent requests.
+
+    Uses the same rounded coordinates as ``_build_pvlib_pv_profile`` so the
+    per-year simulations that follow hit the in-process cache instead of
+    NASA. A failed year is logged and left to the per-year path, which
+    retries it and otherwise falls back to the simplified profile.
+    """
+    lat, lon = round(latitude, 4), round(longitude, 4)
+    with ThreadPoolExecutor(max_workers=_PREFETCH_WORKERS) as pool:
+        futures = {
+            pool.submit(_fetch_nasa_power_hourly_weather, lat, lon, year): year
+            for year in years
+        }
+        for future, year in futures.items():
+            try:
+                future.result()
+            except Exception as exc:
+                print(f"[nasa] prefetch {lat},{lon} {year} failed: {exc}")
+
+
 @lru_cache(maxsize=256)
 def fetch_nasa_power_climatology_tilted_solar_hours(
     latitude: float,
@@ -160,10 +194,9 @@ def fetch_nasa_power_climatology_tilted_solar_hours(
         "end": end_year,
     }
 
-    with httpx.Client(timeout=_NASA_POWER_TIMEOUT) as client:
-        response = client.get(_NASA_POWER_CLIMATOLOGY_URL, params=params)
-        response.raise_for_status()
-        payload = response.json()
+    payload = fetch_json(
+        _NASA_POWER_CLIMATOLOGY_URL, params, timeout=_NASA_POWER_TIMEOUT
+    )
 
     values = (
         payload.get("properties", {})
