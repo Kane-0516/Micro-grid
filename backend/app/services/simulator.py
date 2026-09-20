@@ -17,6 +17,7 @@ from app.services.microgrid_simulator import (  # noqa: E402
     OffGridMicrogridSimulator,
     generate_load_profile,
     generate_pv_profile,
+    prefetch_nasa_power_hourly_weather,
 )
 from app.services.solution_pipeline import (  # noqa: E402
     DieselFuelModel,
@@ -603,6 +604,13 @@ def _build_twenty_year_average_solar_diesel_analysis(
     monthly_records: list[dict[str, list[float]]] = []
     simulated_years: list[int] = []
 
+    # All years' weather in a few concurrent round-trips; the loop below then
+    # reads it from cache and is CPU-bound only. With no PV the profile is
+    # all zeros and never fetches, so neither do we.
+    if pv_kw > 0:
+        prefetch_nasa_power_hourly_weather(
+            latitude, longitude, range(start_year, end_year + 1)
+        )
     for sim_year in range(start_year, end_year + 1):
         try:
             pv_profile = generate_pv_profile(

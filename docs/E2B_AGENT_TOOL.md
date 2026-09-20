@@ -134,3 +134,44 @@ JSON shapes, just invoked in-process instead of over HTTP.
   redeploy step.
 - **No shared state**: every call gets a clean catalog load from the
   cloned `products.yaml`.
+
+## Cold start: weather cache and parsing
+
+Profiling the twenty-year analysis showed the ~140 s "cold start" was not
+the sandbox booting. It was two things inside
+`_build_twenty_year_average_solar_diesel_analysis`:
+
+- 20 sequential NASA POWER hourly requests (4-13 s each, only an in-process
+  `lru_cache`, so every new process paid them again), and
+- a per-key `pd.to_datetime` loop in `_parse_nasa_parameter` costing ~0.5 s
+  per parameter-year on a laptop, several times that on a 2-vCPU sandbox.
+
+Three changes fix this without touching any numerical logic
+(`app/services/nasa_power.py`, `microgrid_simulator.py`, `simulator.py`):
+
+- NASA responses are cached on disk under `backend/data/nasa_power/`
+  (git-ignored, gzip, ~2.3 MB per site for the 20 hourly years). The daily
+  `/api/solar-hours` and climatology fetches share the same cache.
+- All years are prefetched concurrently before the per-year loop (6
+  workers; a failed year is logged as `[nasa] prefetch ...` and retried by
+  the loop). Diesel-only runs (`pv_kw == 0`) never fetch.
+- Parsing is vectorised: one `to_datetime` call per parameter. Values are
+  identical (pinned by `tests/test_nasa_power_io.py`).
+
+Measured for one site, 20 years: read + parse from disk 11.2 s -> 0.46 s;
+with a warmed cache the analysis makes zero NASA requests. With an empty
+cache the cold cost is whatever NASA takes that day (13-110 s observed).
+
+To make sandbox calls for a site skip NASA entirely, warm the cache once
+and force-add the files (the directory itself is ignored):
+
+```bash
+cd backend
+python -c "from app.services.microgrid_simulator import prefetch_nasa_power_hourly_weather as p; p(33.4, -112.0, range(2001, 2021))"
+git add -f data/nasa_power/hourly_33.4_-112.0_*.json.gz
+git commit -m "data: NASA POWER cache for 33.4,-112.0"
+```
+
+The files travel with `git clone`, so `e2b_tool.py` starts cold with the
+weather already on disk. Bump `_CACHE_VERSION` in `nasa_power.py` to
+invalidate every cached file after a NASA data revision.

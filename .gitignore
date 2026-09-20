@@ -70,3 +70,6 @@ pylint-report.txt
 # Report-generation smoke-test byproducts
 backend/tmp_report_test.xlsx
 
+
+# NASA POWER response cache (runtime). Seed a site with `git add -f backend/data/nasa_power/<files>`.
+backend/data/nasa_power/
