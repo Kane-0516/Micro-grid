@@ -7,8 +7,9 @@
 #
 # 每次调用的完整流程：
 #   1. 用这个模板创建一个沙箱
-#   2. 在沙箱里 `git clone <repo> /repo`（浅克隆，秒级）
-#   3. 运行 `python /repo/backend/e2b_tool.py <action> '<json>'`
+#   2. 在沙箱里 `git clone --depth 1 <repo> $HOME/repo`（浅克隆，秒级；
+#      沙箱默认用户非 root，`/` 只读，必须落在 $HOME 下）
+#   3. 运行 `python $HOME/repo/backend/e2b_tool.py <action> '<json>'`
 #   4. 读 stdout 的那一行 JSON
 #   5. 销毁沙箱（sandbox.kill()）——不留任何状态
 # ============================================================

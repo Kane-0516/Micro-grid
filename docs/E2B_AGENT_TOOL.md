@@ -30,7 +30,8 @@ point via `node` directly instead of `e2b`.
 npm install -g @e2b/cli    # or: pip install e2b-cli
 e2b auth login
 cd backend
-e2b template create microgrid-tool --dockerfile e2b.Dockerfile
+e2b template create microgrid-tool --dockerfile e2b.Dockerfile \
+    --cpu-count 2 --memory-mb 2048
 ```
 
 (`e2b template build` is deprecated as of CLI 2.19 — use `template
@@ -38,8 +39,10 @@ create`, which takes the template name as a positional argument and
 `-d/--dockerfile` for the Dockerfile path.)
 
 This builds and pushes the (dependencies-only) template to your E2B
-account. Rebuild it only when `requirements.txt` changes — code changes
-don't need a rebuild, they just need a `git push`.
+account. Rebuild it only when `requirements.txt` or the resource sizing
+changes — **code** changes don't need a rebuild, they just need a `git
+push`. (See [Resources and measured timing](#resources-and-measured-timing)
+for why the memory flag is not optional.)
 
 ### Sandbox runs as a non-root user
 
@@ -67,6 +70,34 @@ sbx.commands.run(
 ```
 
 If the repo is public, drop the token and just clone the plain HTTPS URL.
+
+## Resources and measured timing
+
+The template must be **2 vCPU / 2 GiB** — the default 1 GiB is not
+enough. `optimize` runs the prescreened top-20 candidates through real
+PyPSA and peaks around **1.1 GB RSS**; a 1 GiB sandbox is OOM-killed
+(exit 137) even with the weather cache already warm. `calculate` and
+`layout_optimize` do fit in 1 GiB.
+
+Measured against a live 2 vCPU / 2 GiB sandbox, `optimize` with
+`{"annualLoadKwh": 131400, "minBracketSets": 1, "maxBracketSets": N}`
+(E2B list price is `2*0.000014 + 2*0.0000045 = $0.000037/s` for
+2 vCPU + 2 GiB):
+
+| phase | wall time | cost |
+|---|---|---|
+| sandbox create | 1–18 s | — |
+| `git clone --depth 1` | 0.3–2 s | — |
+| first call, cold (fresh clone; empty weather cache) | ~78 s | — |
+| **cold start total** (create + clone + first call) | **~97 s** | **~$0.0036** |
+| **hot reuse** (same sandbox, weather cache already warm) | ~61 s | **~$0.0023** |
+
+Hot solve time is roughly flat across `N = 4…20` (~60–63 s): `N` only
+grows the prescreen grid (224 → 1120 candidates), while the PyPSA
+evaluation is always the prescreened top 20. Those cold figures assume
+the NASA POWER disk cache + concurrent prefetch from PR #2 — without
+it, the first call additionally pays 20 sequential NASA requests
+(~140 s one-off).
 
 ## Calling it from an agent (Python SDK)
 

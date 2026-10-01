@@ -45,7 +45,11 @@ docker compose down
 3. 运行 `python backend/e2b_tool.py <calculate|optimize|layout_optimize> '<json>'`，从 stdout 读一行 JSON 结果；
 4. 销毁沙箱，不留任何状态。
 
-改代码只需要 `git push`，不用重新构建模板。完整的调用示例（Python SDK 代码、私有仓库怎么处理、注意事项）见 [`docs/E2B_AGENT_TOOL.md`](docs/E2B_AGENT_TOOL.md)
+改**业务代码**只需要 `git push`，下一次调用即生效，不用重新构建模板；但改 `backend/requirements.txt`（依赖）或模板资源规格时需要重建模板。
+
+模板规格为 **2 vCPU / 2 GiB**：`optimize` 会跑 20 个候选的真实 PyPSA 求解，实测峰值内存约 1.1 GB，1 GiB 的沙箱会被 OOM 杀掉；`calculate` / `layout_optimize` 在 1 GiB 下即可。2 vCPU / 2 GiB 下实测（`optimize` 范围 1~20）：冷启动（新建沙箱→首个结果）约 97 s ≈ $0.0036，热复用（同沙箱、气象已缓存）约 61 s ≈ $0.0023（E2B 按 $0.000037/s 计费）。
+
+完整的调用示例（Python SDK 代码、私有仓库怎么处理、注意事项）见 [`docs/E2B_AGENT_TOOL.md`](docs/E2B_AGENT_TOOL.md)
 
 ## 目录结构
 
