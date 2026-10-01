@@ -1,7 +1,9 @@
 """基于 PyPSA 的离网微电网能量仿真.
 
-从 NASA POWER 获取逐时辐照度/气温/风速，用 pvlib 计算光伏出力，
-再用 PyPSA 求解全年 8760 小时的光伏 + 储能 + 柴油发电机运行时序。
+从 NASA POWER 获取逐时辐照度/气温/风速（按 20 年历史数据取逐小时平均，
+得到一个代表性典型年），用 pvlib 计算光伏出力，再用 PyPSA 求解全年 8760
+小时的光伏 + 储能 + 柴油发电机运行时序。PyPSA 仍然只求解一次，用 20 年
+气象平均值代替单一年份的抽样，而不是逐年重跑 20 次仿真。
 """
 
 from __future__ import annotations
@@ -132,6 +134,72 @@ def _fetch_nasa_power_hourly_irradiance(
     return (weather["ghi_wm2"] / 1000.0).rename("ghi_kwh_m2")
 
 
+@lru_cache(maxsize=64)
+def _fetch_nasa_power_hourly_weather_climatology(
+    latitude: float,
+    longitude: float,
+    start_year: int = _NASA_POWER_CLIMATOLOGY_START_YEAR,
+    end_year: int = _NASA_POWER_CLIMATOLOGY_END_YEAR,
+) -> pd.DataFrame:
+    """Average hourly GHI/temperature/wind across many years.
+
+    NASA POWER's hourly endpoint only returns one archive year per
+    request, so a multi-year average is built by fetching every year in
+    [start_year, end_year], keying each hourly reading by (month, day,
+    hour) — dropping Feb 29 so every year lines up on the same 365-day
+    calendar — and averaging across years. This feeds a single PyPSA
+    run with a representative "typical year", rather than re-running
+    the simulation once per year.
+
+    Returns:
+        A DataFrame indexed by (month, day, hour) with the columns from
+        `_NASA_POWER_HOURLY_PARAMETERS`, averaged over the year range.
+    """
+    columns = list(_NASA_POWER_HOURLY_PARAMETERS.values())
+    frames = []
+    for yr in range(start_year, end_year + 1):
+        weather = _fetch_nasa_power_hourly_weather(latitude, longitude, yr)
+        weather = weather[
+            ~((weather.index.month == 2) & (weather.index.day == 29))
+        ]
+        keyed = weather[columns].copy()
+        keyed.index = pd.MultiIndex.from_arrays(
+            [weather.index.month, weather.index.day, weather.index.hour],
+            names=["month", "day", "hour"],
+        )
+        frames.append(keyed)
+
+    averaged = pd.concat(frames).groupby(level=["month", "day", "hour"]).mean()
+    # Every source year drops Feb 29, so the average has no such key;
+    # reuse Feb 28 for it in case the target calendar year is a leap year.
+    for hour in range(24):
+        averaged.loc[(2, 29, hour), :] = averaged.loc[(2, 28, hour), :]
+    return averaged
+
+
+def _fetch_nasa_power_hourly_weather_averaged(
+    latitude: float,
+    longitude: float,
+    year: int,
+    start_year: int = _NASA_POWER_CLIMATOLOGY_START_YEAR,
+    end_year: int = _NASA_POWER_CLIMATOLOGY_END_YEAR,
+) -> pd.DataFrame:
+    """Return a `start_year`-`end_year` average hourly weather profile.
+
+    The averaged (month, day, hour) values are placed onto `year`'s
+    actual calendar dates so the result lines up with
+    `_simulation_snapshots(year)`.
+    """
+    climatology = _fetch_nasa_power_hourly_weather_climatology(
+        latitude, longitude, start_year, end_year
+    )
+    snapshots = _simulation_snapshots(year)
+    keys = list(zip(snapshots.month, snapshots.day, snapshots.hour))
+    weather = climatology.loc[keys].copy()
+    weather.index = snapshots
+    return weather
+
+
 @lru_cache(maxsize=256)
 def fetch_nasa_power_climatology_tilted_solar_hours(
     latitude: float,
@@ -229,7 +297,7 @@ def _build_pvlib_pv_profile(
     if panel_capacity_kw <= 0:
         return pd.Series(0.0, index=snapshots, name="pv_cf")
 
-    weather = _fetch_nasa_power_hourly_weather(
+    weather = _fetch_nasa_power_hourly_weather_averaged(
         round(latitude, 4), round(longitude, 4), year
     )
     localized_snapshots = snapshots.tz_localize(
